@@ -1,0 +1,108 @@
+#!/bin/bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+APP_NAME="Celesnity Meeting"
+EXECUTABLE_NAME="CelesnityMeeting"
+BUNDLE_ID="com.celesnity.meeting"
+APP_DIR="${APP_NAME}.app"
+CONTENTS="${APP_DIR}/Contents"
+MACOS_DIR="${CONTENTS}/MacOS"
+RES_DIR="${CONTENTS}/Resources"
+
+echo "→ Quitting any running Celesnity Meeting instance..."
+osascript -e 'tell application "Celesnity Meeting" to quit' >/dev/null 2>&1 || true
+# Give it a moment to flush and exit before we overwrite the binary.
+sleep 1
+pkill -x "${EXECUTABLE_NAME}" 2>/dev/null || true
+
+echo "→ Building release binary..."
+swift build -c release
+
+echo "→ Creating ${APP_DIR}..."
+rm -rf "${APP_DIR}"
+mkdir -p "${MACOS_DIR}" "${RES_DIR}"
+
+cp ".build/release/${EXECUTABLE_NAME}" "${MACOS_DIR}/${EXECUTABLE_NAME}"
+
+if [ -f "Resources/AppIcon.icns" ]; then
+    cp "Resources/AppIcon.icns" "${RES_DIR}/AppIcon.icns"
+    echo "→ Bundled AppIcon.icns"
+else
+    echo "⚠ Resources/AppIcon.icns not found — generate it with ./make-icon.sh"
+fi
+
+cat > "${CONTENTS}/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>${APP_NAME}</string>
+    <key>CFBundleDisplayName</key>
+    <string>${APP_NAME}</string>
+    <key>CFBundleIdentifier</key>
+    <string>${BUNDLE_ID}</string>
+    <key>CFBundleExecutable</key>
+    <string>${EXECUTABLE_NAME}</string>
+    <key>CFBundleVersion</key>
+    <string>3</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.2.1</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.2</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Celesnity Meeting needs the microphone to record your voice into the right channel.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Celesnity Meeting captures system audio output so you can archive meetings and livestreams.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Celesnity Meeting uses ScreenCaptureKit to record system audio. No video is saved.</string>
+</dict>
+</plist>
+EOF
+
+# Prefer a real signing identity: TCC tracks it by stable identity, so
+# permissions survive rebuilds. Ad-hoc fallback gets a fresh code identity
+# every build, which makes TCC forget the app each time.
+SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/Apple Development|Developer ID Application/ {print $2; exit}')"
+
+if [ -n "${SIGN_ID}" ]; then
+    echo "→ Signing with \"${SIGN_ID}\"..."
+    codesign --force --deep --sign "${SIGN_ID}" "${APP_DIR}"
+else
+    echo "→ No signing identity found — ad-hoc signing (TCC will forget permissions on every rebuild)..."
+    codesign --force --deep --sign - "${APP_DIR}"
+    # Ad-hoc signing produces a fresh code identity on every rebuild, so macOS TCC
+    # treats the new binary as a different app from whatever it authorized before.
+    # Reset the relevant TCC entries so the next launch shows the permission prompts
+    # cleanly instead of silently failing with -3801 ("user declined TCCs").
+    echo "→ Resetting TCC for ${BUNDLE_ID} (Screen Recording + Microphone)..."
+    tccutil reset ScreenCapture "${BUNDLE_ID}" >/dev/null 2>&1 || true
+    tccutil reset Microphone     "${BUNDLE_ID}" >/dev/null 2>&1 || true
+fi
+
+echo ""
+echo "✅ Done: ${APP_DIR}"
+echo ""
+echo "Next steps:"
+echo "  1. Launch ${APP_DIR} (or drag it to /Applications and launch from there)."
+echo "  2. Click record once — macOS will prompt for Microphone and Screen Recording."
+echo "  3. Approve both in System Settings → Privacy & Security."
+echo "  4. IMPORTANT: fully quit Celesnity Meeting (menu bar → Quit) and relaunch — screen"
+echo "     recording permission only takes effect on the next launch."
+echo "  (With a real signing identity, permissions persist across rebuilds"
+echo "   after this one-time setup.)"
