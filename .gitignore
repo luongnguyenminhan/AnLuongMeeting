@@ -5,19 +5,64 @@ Package.resolved
 
 # Xcode
 *.xcodeproj/
+!macOS/AnLuongMeeting.xcodeproj/
+!macOS/AnLuongMeeting.xcodeproj/**
+!iOS/AnLuongMeetingiOS/AnLuongMeetingiOS.xcodeproj/
+!iOS/AnLuongMeetingiOS/AnLuongMeetingiOS.xcodeproj/**
 *.xcworkspace/
+!AnLuongMeeting.xcworkspace/
+!AnLuongMeeting.xcworkspace/**
 xcuserdata/
 DerivedData/
+build/
+
+# Xcode user-specific files
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
 
 # Build outputs
 MeetRec.app/
 MeetRec.app.zip
 *.dSYM/
-build/
+*.dSYM.zip
+*.ipa
+*.xcarchive
+
+# Code coverage
+*.gcda
+*.gcno
+*.gcov
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Profiling
+*.profraw
+*.profdata
 
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
 
-# Logs and recordings (in case anyone runs from this dir)
+# Logs and recordings
 *.log
 *.m4a
+
+# Docs (generated)
+docs/superpowers/*
+
+# Misc
+*.swp
+*~
+.env

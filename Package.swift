@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "CelesnityMeeting",
+    name: "AnLuongMeeting",
     platforms: [.macOS("14.2")],
     targets: [
         .executableTarget(
-            name: "CelesnityMeeting",
-            path: "Sources/CelesnityMeeting",
+            name: "AnLuongMeeting",
+            path: "Sources/AnLuongMeeting",
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),
@@ -21,9 +21,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "CelesnityMeetingTests",
-            dependencies: ["CelesnityMeeting"],
-            path: "Tests/CelesnityMeetingTests"
+            name: "AnLuongMeetingTests",
+            dependencies: ["AnLuongMeeting"],
+            path: "Tests/AnLuongMeetingTests"
         )
     ]
 )

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate Celesnity Meeting's app icon: a 1024x1024 white squircle with a red
+Generate AnLuong Meeting's app icon: a 1024x1024 white squircle with a red
 record dot in the center (mimicking the SF Symbol `record.circle.fill`).
 
 Output: build/AppIcon-1024.png (which make-icon.sh then turns into AppIcon.icns).

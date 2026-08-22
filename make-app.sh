@@ -3,16 +3,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-APP_NAME="Celesnity Meeting"
-EXECUTABLE_NAME="CelesnityMeeting"
-BUNDLE_ID="com.celesnity.meeting"
+APP_NAME="AnLuong Meeting"
+EXECUTABLE_NAME="AnLuongMeeting"
+BUNDLE_ID="com.anluong.meeting"
 APP_DIR="${APP_NAME}.app"
 CONTENTS="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS}/MacOS"
 RES_DIR="${CONTENTS}/Resources"
 
-echo "→ Quitting any running Celesnity Meeting instance..."
-osascript -e 'tell application "Celesnity Meeting" to quit' >/dev/null 2>&1 || true
+echo "→ Quitting any running AnLuong Meeting instance..."
+osascript -e 'tell application "AnLuong Meeting" to quit' >/dev/null 2>&1 || true
 # Give it a moment to flush and exit before we overwrite the binary.
 sleep 1
 pkill -x "${EXECUTABLE_NAME}" 2>/dev/null || true
@@ -65,11 +65,11 @@ cat > "${CONTENTS}/Info.plist" <<EOF
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Celesnity Meeting needs the microphone to record your voice into the right channel.</string>
+    <string>AnLuong Meeting needs the microphone to record your voice into the right channel.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Celesnity Meeting captures system audio output so you can archive meetings and livestreams.</string>
+    <string>AnLuong Meeting captures system audio output so you can archive meetings and livestreams.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Celesnity Meeting uses ScreenCaptureKit to record system audio. No video is saved.</string>
+    <string>AnLuong Meeting uses ScreenCaptureKit to record system audio. No video is saved.</string>
 </dict>
 </plist>
 EOF
@@ -102,7 +102,7 @@ echo "Next steps:"
 echo "  1. Launch ${APP_DIR} (or drag it to /Applications and launch from there)."
 echo "  2. Click record once — macOS will prompt for Microphone and Screen Recording."
 echo "  3. Approve both in System Settings → Privacy & Security."
-echo "  4. IMPORTANT: fully quit Celesnity Meeting (menu bar → Quit) and relaunch — screen"
+echo "  4. IMPORTANT: fully quit AnLuong Meeting (menu bar → Quit) and relaunch — screen"
 echo "     recording permission only takes effect on the next launch."
 echo "  (With a real signing identity, permissions persist across rebuilds"
 echo "   after this one-time setup.)"

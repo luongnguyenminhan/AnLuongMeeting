@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>AnLuong Meeting</string>
+	<key>CFBundleDisplayName</key>
+	<string>AnLuong Meeting</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.anluong.meeting</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleVersion</key>
+	<string>3</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.1</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.2</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>AnLuong Meeting needs the microphone to record your voice into the right channel.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>AnLuong Meeting captures system audio output so you can archive meetings and livestreams.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>AnLuong Meeting uses ScreenCaptureKit to record system audio. No video is saved.</string>
+</dict>
+</plist>
