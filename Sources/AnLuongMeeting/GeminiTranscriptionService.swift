@@ -23,7 +23,7 @@ enum RegenerationMode: Sendable {
     case both
 }
 
-enum GeminiTranscriptionError: LocalizedError {
+enum GeminiTranscriptionError: LocalizedError, Equatable {
     case missingAPIKey
     case invalidDuration
     case exportUnavailable
@@ -34,6 +34,7 @@ enum GeminiTranscriptionError: LocalizedError {
     case remoteProcessingFailed
     case emptyTranscript(Int)
     case meetingNoteFailed(String)
+    case rateLimited(retryAfter: TimeInterval?)
 
     var errorDescription: String? {
         switch self {
@@ -57,6 +58,9 @@ enum GeminiTranscriptionError: LocalizedError {
             return "Gemini returned no transcript for segment \(segment)."
         case .meetingNoteFailed(let message):
             return "Transcript saved, but meeting note generation failed: \(message)"
+        case .rateLimited(let retryAfter):
+            if let retryAfter { return "Gemini rate-limited the request. Retry after \(Int(retryAfter))s." }
+            return "Gemini rate-limited the request."
         }
     }
 }
@@ -78,7 +82,11 @@ actor GeminiTranscriptionService {
     If you not hear any speak, just said there is no speaker in the audio, skip the background noise, only focus on the speaker. NO EXTRA INFORMATION NEEDED.
     """
 
-    private static func meetingNotePrompt(today: String) -> String {
+    static func meetingNotePrompt(today: String, detailAddendum: String) -> String {
+        baseMeetingNotePrompt(today: today) + detailAddendum + "\n\nBẢN CHÉP LỜI:\n"
+    }
+
+    private static func baseMeetingNotePrompt(today: String) -> String {
         return """
     Hãy tạo ghi chú cuộc họp bằng tiếng Việt từ bản chép lời được cung cấp sau đây.
 
@@ -122,8 +130,6 @@ actor GeminiTranscriptionService {
     - [Công việc 2] - Người phụ trách: [Tên], Deadline: [Thời hạn nếu có]
 
     Chỉ trả về nội dung ghi chú theo đúng định dạng trên. Không thêm lời giải thích trước hoặc sau ghi chú.
-
-    BẢN CHÉP LỜI:
     """
     }
 
@@ -191,14 +197,8 @@ actor GeminiTranscriptionService {
         }
 
         let mergedTranscript = transcripts.joined(separator: "\n\n") + "\n"
-        let transcriptURL = recordingURL.deletingPathExtension().appendingPathExtension("txt")
+        let transcriptURL = recordingURL.deletingLastPathComponent().appendingPathComponent("transcript.txt")
         try Data(mergedTranscript.utf8).write(to: transcriptURL, options: .atomic)
-
-        progress(TranscriptionProgress(
-            stage: .meetingNote,
-            currentSegment: totalSegments,
-            totalSegments: totalSegments
-        ))
 
         let meetingNote: String
         do {
@@ -206,15 +206,16 @@ actor GeminiTranscriptionService {
                 transcript: mergedTranscript,
                 apiKey: key,
                 memoryContext: memoryContext,
-                meetingDate: Self.todayString()
+                meetingDate: Self.todayString(),
+                progress: progress
             )
         } catch {
             throw GeminiTranscriptionError.meetingNoteFailed(error.localizedDescription)
         }
 
         let meetingNoteURL = recordingURL
-            .deletingPathExtension()
-            .appendingPathExtension("meeting-notes.txt")
+            .deletingLastPathComponent()
+            .appendingPathComponent("notes.txt")
         do {
             try Data((meetingNote.trimmingCharacters(in: .whitespacesAndNewlines) + "\n").utf8)
                 .write(to: meetingNoteURL, options: .atomic)
@@ -286,7 +287,7 @@ actor GeminiTranscriptionService {
         }
 
         let mergedTranscript = transcripts.joined(separator: "\n\n") + "\n"
-        let transcriptURL = recordingURL.deletingPathExtension().appendingPathExtension("txt")
+        let transcriptURL = recordingURL.deletingLastPathComponent().appendingPathComponent("transcript.txt")
         try Data(mergedTranscript.utf8).write(to: transcriptURL, options: .atomic)
         return transcriptURL
     }
@@ -296,7 +297,8 @@ actor GeminiTranscriptionService {
         transcriptURL: URL,
         recordingURL: URL,
         apiKey: String,
-        memoryContext: String? = nil
+        memoryContext: String? = nil,
+        progress: @escaping @Sendable (TranscriptionProgress) -> Void = { _ in }
     ) async throws -> URL {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
@@ -310,12 +312,13 @@ actor GeminiTranscriptionService {
             transcript: transcript,
             apiKey: key,
             memoryContext: memoryContext,
-            meetingDate: Self.todayString()
+            meetingDate: Self.todayString(),
+            progress: progress
         )
 
         let meetingNoteURL = recordingURL
-            .deletingPathExtension()
-            .appendingPathExtension("meeting-notes.txt")
+            .deletingLastPathComponent()
+            .appendingPathComponent("notes.txt")
         try Data((meetingNote.trimmingCharacters(in: .whitespacesAndNewlines) + "\n").utf8)
             .write(to: meetingNoteURL, options: .atomic)
         return meetingNoteURL
@@ -426,14 +429,15 @@ actor GeminiTranscriptionService {
         transcript: String,
         apiKey: String,
         memoryContext: String?,
-        meetingDate: String
+        meetingDate: String,
+        progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> String {
-        return try await generateText(
-            parts: [[
-                "text": Self.meetingNotePrompt(today: meetingDate) + "\n" + transcript
-            ]],
-            systemInstruction: memoryContext,
-            apiKey: apiKey
+        try await generateMeetingNoteViaResearchTree(
+            transcript: transcript,
+            apiKey: apiKey,
+            memoryContext: memoryContext,
+            meetingDate: meetingDate,
+            progress: progress
         )
     }
 
@@ -453,7 +457,7 @@ actor GeminiTranscriptionService {
         return Self.parseMemoryDraft(from: json)
     }
 
-    private func generateStructuredJSON(prompt: String, schema: [String: Any], apiKey: String) async throws -> Data {
+    func generateStructuredJSON(prompt: String, schema: [String: Any], apiKey: String) async throws -> Data {
         let url = apiURL(path: "v1beta/models/\(Self.model):generateContent", apiKey: apiKey)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -632,7 +636,7 @@ actor GeminiTranscriptionService {
         return formatter.string(from: Date())
     }
 
-    private func generateText(
+    func generateText(
         parts: [[String: Any]],
         systemInstruction: String? = nil,
         apiKey: String
@@ -719,21 +723,13 @@ actor GeminiTranscriptionService {
 
     @discardableResult
     private func validate(_ response: URLResponse, data: Data? = nil) throws -> HTTPURLResponse {
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
-            let message = data.flatMap { extractErrorMessage(from: $0) }
-                ?? HTTPURLResponse.localizedString(forStatusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
-            throw GeminiTranscriptionError.requestFailed(message)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GeminiTranscriptionError.requestFailed("No HTTP response.")
+        }
+        if let error = classifyGeminiResponse(httpResponse, errorBody: data) {
+            throw error
         }
         return httpResponse
-    }
-
-    private func extractErrorMessage(from data: Data) -> String? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = root["error"] as? [String: Any] else {
-            return nil
-        }
-        return error["message"] as? String
     }
 
     private func export(

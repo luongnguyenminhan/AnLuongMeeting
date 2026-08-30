@@ -19,6 +19,8 @@
 		A10000010000000000000016 /* GeminiAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000010000000000000016 /* GeminiAPI.swift */; };
 		A10000010000000000000017 /* MemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000010000000000000017 /* MemoryStore.swift */; };
 		A10000010000000000000018 /* NoteCorrectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000010000000000000018 /* NoteCorrectionStore.swift */; };
+		A10000010000000000000019 /* NoteDetailPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000010000000000000019 /* NoteDetailPreferences.swift */; };
+		A1000001000000000000001A /* NoteResearchTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3000001000000000000001A /* NoteResearchTree.swift */; };
 		A10000010000000000000020 /* AnLuongMeetingiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000010000000000000020 /* AnLuongMeetingiOSApp.swift */; };
 		A10000010000000000000021 /* IOSMeetingStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000010000000000000021 /* IOSMeetingStorage.swift */; };
 		A10000010000000000000022 /* IOSAPIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000010000000000000022 /* IOSAPIKeyStore.swift */; };
@@ -71,6 +73,8 @@
 		A30000010000000000000016 /* GeminiAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiAPI.swift; sourceTree = "<group>"; };
 		A30000010000000000000017 /* MemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryStore.swift; sourceTree = "<group>"; };
 		A30000010000000000000018 /* NoteCorrectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteCorrectionStore.swift; sourceTree = "<group>"; };
+		A30000010000000000000019 /* NoteDetailPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteDetailPreferences.swift; sourceTree = "<group>"; };
+		A3000001000000000000001A /* NoteResearchTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteResearchTree.swift; sourceTree = "<group>"; };
 		A30000010000000000000020 /* AnLuongMeetingiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnLuongMeetingiOSApp.swift; sourceTree = "<group>"; };
 		A30000010000000000000021 /* IOSMeetingStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMeetingStorage.swift; sourceTree = "<group>"; };
 		A30000010000000000000022 /* IOSAPIKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSAPIKeyStore.swift; sourceTree = "<group>"; };
@@ -143,6 +147,8 @@
 				A30000010000000000000016 /* GeminiAPI.swift */,
 				A30000010000000000000017 /* MemoryStore.swift */,
 				A30000010000000000000018 /* NoteCorrectionStore.swift */,
+				A30000010000000000000019 /* NoteDetailPreferences.swift */,
+				A3000001000000000000001A /* NoteResearchTree.swift */,
 			);
 			path = ../../Packages/AnLuongMeetingCore/Sources/AnLuongMeetingCore;
 			sourceTree = "<group>";
@@ -324,6 +330,8 @@
 				A10000010000000000000016 /* GeminiAPI.swift in Sources */,
 				A10000010000000000000017 /* MemoryStore.swift in Sources */,
 				A10000010000000000000018 /* NoteCorrectionStore.swift in Sources */,
+				A10000010000000000000019 /* NoteDetailPreferences.swift in Sources */,
+				A1000001000000000000001A /* NoteResearchTree.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

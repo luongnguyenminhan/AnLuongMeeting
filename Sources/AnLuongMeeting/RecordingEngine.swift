@@ -7,7 +7,7 @@ enum TranscriptionState {
     case idle
     case notConfigured
     case processing(current: Int, total: Int)
-    case generatingMeetingNote
+    case generatingMeetingNote(current: Int, total: Int)
     case completed(transcriptURL: URL, meetingNoteURL: URL)
     case failed(String)
 }
@@ -63,6 +63,10 @@ final class RecordingEngine: ObservableObject {
     @Published private(set) var pendingMemoryCount = 0
     @Published private(set) var isBackfillingMemory = false
     @Published private(set) var backfillProgress: (current: Int, total: Int) = (0, 0)
+    /// Bumped whenever a memory/correction analysis pass finishes writing to disk — views
+    /// showing a specific meeting's corrections observe this to know when to reload, since the
+    /// analysis runs in a detached Task that outlives the regenerate/transcribe call that started it.
+    @Published private(set) var lastMemoryRefreshToken = UUID()
     private var transcriptionTask: Task<Void, Never>?
     private var systemCapture: SystemAudioCapture?
     private var micCapture: MicrophoneCapture?
@@ -183,8 +187,9 @@ final class RecordingEngine: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HHmmss"
-        let filename = "\(formatter.string(from: Date())).m4a"
-        let url = recordingsDirectory.appendingPathComponent(filename)
+        let meetingFolder = recordingsDirectory.appendingPathComponent(formatter.string(from: Date()), isDirectory: true)
+        try FileManager.default.createDirectory(at: meetingFolder, withIntermediateDirectories: true)
+        let url = meetingFolder.appendingPathComponent("recording.m4a")
         Log.write("starting recording → \(url.path)")
 
         let writer = try StereoWriter(outputURL: url)
@@ -322,7 +327,10 @@ final class RecordingEngine: ObservableObject {
                                     total: progress.totalSegments
                                 )
                             case .meetingNote:
-                                self.transcriptionState = .generatingMeetingNote
+                                self.transcriptionState = .generatingMeetingNote(
+                                    current: progress.currentSegment,
+                                    total: progress.totalSegments
+                                )
                             }
                         }
                     }
@@ -393,7 +401,7 @@ final class RecordingEngine: ObservableObject {
                    ) {
                     memory.merge(draft: draft)
                     Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
-                    Self.saveCorrections(draft.corrections, forNoteAt: noteURL)
+                    Self.saveCorrections(draft.corrections, noteText: note, forNoteAt: noteURL)
                 }
                 await MainActor.run { self.backfillProgress = (index + 1, eligible.count) }
             }
@@ -401,6 +409,7 @@ final class RecordingEngine: ObservableObject {
             await MainActor.run {
                 self.isBackfillingMemory = false
                 self.refreshPendingMemoryCount()
+                self.lastMemoryRefreshToken = UUID()
             }
         }
     }
@@ -421,8 +430,11 @@ final class RecordingEngine: ObservableObject {
             memory.merge(draft: draft)
             Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
             try? store.save(memory)
-            Self.saveCorrections(draft.corrections, forNoteAt: meetingNoteURL)
-            await MainActor.run { self.refreshPendingMemoryCount() }
+            Self.saveCorrections(draft.corrections, noteText: note, forNoteAt: meetingNoteURL)
+            await MainActor.run {
+                self.refreshPendingMemoryCount()
+                self.lastMemoryRefreshToken = UUID()
+            }
         }
     }
 
@@ -433,11 +445,17 @@ final class RecordingEngine: ObservableObject {
         }
     }
 
-    private static func saveCorrections(_ corrections: [NoteCorrection], forNoteAt noteURL: URL) {
-        guard !corrections.isEmpty else { return }
-        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
-        let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
-        try? store.save(corrections)
+    /// Merges freshly-found corrections with the existing sidecar rather than overwriting it:
+    /// a previously pending correction is dropped only when its wrongText no longer literally
+    /// appears in the current note (evidence it was actually fixed), not just because this
+    /// particular Gemini pass didn't re-flag it — an LLM response can be incomplete, and
+    /// trusting it as the sole source of truth would silently drop real unfixed issues.
+    private static func saveCorrections(_ corrections: [NoteCorrection], noteText: String, forNoteAt noteURL: URL) {
+        let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent())
+        let stillRelevant = store.load().filter { $0.status != .pending || noteText.contains($0.wrongText) }
+        let existingWrongTexts = Set(stillRelevant.map { $0.wrongText.lowercased() })
+        let merged = stillRelevant + corrections.filter { !existingWrongTexts.contains($0.wrongText.lowercased()) }
+        try? store.save(merged)
     }
 
     private func alertSystemAudioFailure() {
@@ -526,7 +544,7 @@ final class RecordingEngine: ObservableObject {
                     )
 
                 case .noteOnly:
-                    self?.transcriptionState = .generatingMeetingNote
+                    self?.transcriptionState = .generatingMeetingNote(current: 0, total: 0)
                     guard let transcriptURL = meeting.transcriptURL else {
                         throw GeminiTranscriptionError.emptyTranscript(0)
                     }
@@ -534,7 +552,16 @@ final class RecordingEngine: ObservableObject {
                         transcriptURL: transcriptURL,
                         recordingURL: recordingURL,
                         apiKey: key,
-                        memoryContext: memoryContext
+                        memoryContext: memoryContext,
+                        progress: { [weak self] progress in
+                            Task { @MainActor in
+                                guard let self else { return }
+                                self.transcriptionState = .generatingMeetingNote(
+                                    current: progress.currentSegment,
+                                    total: progress.totalSegments
+                                )
+                            }
+                        }
                     )
                     guard !Task.isCancelled else { return }
                     self?.transcriptionState = .completed(
@@ -559,7 +586,10 @@ final class RecordingEngine: ObservableObject {
                                         total: progress.totalSegments
                                     )
                                 case .meetingNote:
-                                    self.transcriptionState = .generatingMeetingNote
+                                    self.transcriptionState = .generatingMeetingNote(
+                                    current: progress.currentSegment,
+                                    total: progress.totalSegments
+                                )
                                 }
                             }
                         }

@@ -260,10 +260,13 @@ struct MenuBarView: View {
             )
             .font(AnLuongTypography.body(11).weight(.semibold))
             .foregroundStyle(AnLuongPalette.mistBlue)
-        case .generatingMeetingNote:
-            Label("Generating meeting note", systemImage: "doc.text.magnifyingglass")
-                .font(AnLuongTypography.body(11).weight(.semibold))
-                .foregroundStyle(AnLuongPalette.mistBlue)
+        case .generatingMeetingNote(let current, let total):
+            Label(
+                total > 0 ? "Generating note — topic \(current) of \(total)" : "Generating meeting note",
+                systemImage: "doc.text.magnifyingglass"
+            )
+            .font(AnLuongTypography.body(11).weight(.semibold))
+            .foregroundStyle(AnLuongPalette.mistBlue)
         case .completed(let transcriptURL, let meetingNoteURL):
             VStack(alignment: .leading, spacing: 7) {
                 Label("Transcript and note saved", systemImage: "checkmark.circle.fill")
