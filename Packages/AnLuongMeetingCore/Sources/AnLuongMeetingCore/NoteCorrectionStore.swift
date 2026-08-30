@@ -45,3 +45,34 @@ public func wrapCorrectionsAsLinks(in text: String, corrections: [NoteCorrection
 public func applyCorrection(_ correction: NoteCorrection, chosenText: String, in noteText: String) -> String {
     noteText.replacingOccurrences(of: correction.wrongText, with: chosenText)
 }
+
+/// Deterministically rewrites every known ASR mishearing in `text` to its canonical spelling,
+/// straight from the confirmed glossary/participant aliases — run right after transcription so
+/// a known term like "Celesta" becomes "Celesnity" in the transcript itself, rather than hoping
+/// the note-generation LLM notices and applies the correction on its own.
+///
+/// A single left-to-right scan, trying the longest alias first at each position: doing this as
+/// separate whole-text `replacingOccurrences` passes (longest alias first) looks equivalent but
+/// isn't — once a longer alias has been substituted, a shorter *unrelated* alias can still match
+/// a substring of the replacement text itself and corrupt it (e.g. alias "An" clobbering the
+/// "An" inside an already-substituted "Trường An"). Scanning once and advancing past each match
+/// avoids ever re-examining replaced text.
+public func applyGlossaryCorrections(_ text: String, pairs: [(alias: String, canonical: String)]) -> String {
+    let sortedPairs = pairs.filter { !$0.alias.isEmpty }.sorted { $0.alias.count > $1.alias.count }
+    guard !sortedPairs.isEmpty else { return text }
+
+    var result = ""
+    var index = text.startIndex
+    scan: while index < text.endIndex {
+        for pair in sortedPairs {
+            if let range = text.range(of: pair.alias, range: index..<text.endIndex), range.lowerBound == index {
+                result += pair.canonical
+                index = range.upperBound
+                continue scan
+            }
+        }
+        result.append(text[index])
+        index = text.index(after: index)
+    }
+    return result
+}

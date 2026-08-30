@@ -30,15 +30,31 @@ struct GlossaryView: View {
                         emptyRow("No terms yet — add one below, or generate from past meetings above.")
                     }
                     ForEach(memory.glossary) { entry in
-                        row(
-                            title: entry.term,
-                            confirmed: entry.confirmed,
-                            snippet: entry.snippet,
-                            detail: entry.confirmed ? "\(entry.category == .project ? "Project" : "Jargon") · used \(entry.usageCount)× · \(relative(entry.lastUsedAt))" : nil,
-                            onAccept: entry.confirmed ? nil : { memory.acceptGlossary(id: entry.id); persist() },
-                            onReject: entry.confirmed ? nil : { memory.rejectGlossary(id: entry.id); persist() },
-                            onDelete: entry.confirmed ? { memory.glossary.removeAll { $0.id == entry.id }; persist() } : nil
-                        )
+                        VStack(alignment: .leading, spacing: 4) {
+                            row(
+                                title: entry.term,
+                                confirmed: entry.confirmed,
+                                snippet: entry.snippet,
+                                detail: entry.confirmed ? "\(entry.category == .project ? "Project" : "Jargon") · used \(entry.usageCount)× · \(relative(entry.lastUsedAt))" : nil,
+                                onAccept: entry.confirmed ? nil : { memory.acceptGlossary(id: entry.id); persist() },
+                                onReject: entry.confirmed ? nil : { memory.rejectGlossary(id: entry.id); persist() },
+                                onDelete: entry.confirmed ? { memory.glossary.removeAll { $0.id == entry.id }; persist() } : nil
+                            )
+                            if !entry.confirmed {
+                                let others = memory.glossary.filter { $0.id != entry.id && $0.confirmed }
+                                if !others.isEmpty {
+                                    Menu("Actually a mishearing of…") {
+                                        ForEach(others) { other in
+                                            Button(other.term) {
+                                                memory.mergeGlossaryAsAlias(id: entry.id, intoTermID: other.id)
+                                                persist()
+                                            }
+                                        }
+                                    }
+                                    .font(.caption)
+                                }
+                            }
+                        }
                     }
                     HStack {
                         TextField("Add a term", text: $newTerm)
@@ -81,6 +97,19 @@ struct GlossaryView: View {
                                         ForEach(others) { other in
                                             Button(other.name) {
                                                 memory.mergeParticipants(primaryID: other.id, absorbing: participant.id)
+                                                persist()
+                                            }
+                                        }
+                                    }
+                                    .font(.caption)
+                                }
+                            } else {
+                                let others = memory.participants.filter { $0.id != participant.id && $0.confirmed }
+                                if !others.isEmpty {
+                                    Menu("Actually a mishearing of…") {
+                                        ForEach(others) { other in
+                                            Button(other.name) {
+                                                memory.mergeParticipantAsAlias(id: participant.id, intoParticipantID: other.id)
                                                 persist()
                                             }
                                         }

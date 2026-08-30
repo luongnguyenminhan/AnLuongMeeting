@@ -66,6 +66,6 @@ public struct NoteDetailPreferences: Codable, Equatable, Sendable {
             lines.append("- \(trimmedExtra)")
         }
         guard !lines.isEmpty else { return "" }
-        return "\n\nYÊU CẦU BỔ SUNG VỀ ĐỘ CHI TIẾT:\n" + lines.joined(separator: "\n")
+        return "\n\nYÊU CẦU BỔ SUNG TỪ NGƯỜI DÙNG (PHẢI TUÂN THỦ NGHIÊM NGẶT, kể cả khi khác với hướng dẫn ở trên, kể cả về ngôn ngữ):\n" + lines.joined(separator: "\n")
     }
 }

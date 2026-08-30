@@ -256,8 +256,8 @@ final class NoteResearchTreeTests: XCTestCase {
         XCTAssertTrue(prompt.contains("unique-transcript-marker-999"))
     }
 
-    func testSynthesizePromptIncludesHeaderMetadataAndTopicFindings() {
-        let prompt = synthesizePrompt(
+    func testSynthesizeMetadataPromptIncludesHeaderMetadataAndTopicFindingsButNotAsCopyTarget() {
+        let prompt = synthesizeMetadataPrompt(
             today: "30/08/2026",
             meetingTitleGuess: "Phỏng vấn kỹ thuật",
             participantsGuess: ["An", "Đạt"],
@@ -272,8 +272,8 @@ final class NoteResearchTreeTests: XCTestCase {
         XCTAssertTrue(prompt.contains("unique-finding-content-321"))
     }
 
-    func testSynthesizePromptHandlesMissingTitleAndParticipants() {
-        let prompt = synthesizePrompt(
+    func testSynthesizeMetadataPromptHandlesMissingTitleAndParticipants() {
+        let prompt = synthesizeMetadataPrompt(
             today: "30/08/2026",
             meetingTitleGuess: nil,
             participantsGuess: [],
@@ -282,5 +282,110 @@ final class NoteResearchTreeTests: XCTestCase {
         )
 
         XCTAssertFalse(prompt.isEmpty)
+    }
+
+    // MARK: - Synthesis metadata parsing and assembly
+
+    func testParseSynthesisMetadataDecodesValidJSONWithCustomLabels() {
+        let json = Data("""
+        {
+          "meetingTitle": "Weekly Sync",
+          "topicSentence": "Progress update",
+          "participants": ["An", "Đạt"],
+          "summary": "The team reviewed progress.",
+          "decisions": ["Ship on Friday"],
+          "actionItems": [{"task": "Fix bug", "owner": "An", "deadline": "Friday"}],
+          "labels": {
+            "generalInfoHeading": "General Info",
+            "dateLabel": "Date",
+            "topicLabel": "Topic",
+            "participantsLabel": "Participants",
+            "summaryHeading": "Summary",
+            "topicsHeading": "Topics Discussed",
+            "decisionsHeading": "Decisions",
+            "actionItemsHeading": "Action Items",
+            "ownerLabel": "Owner",
+            "deadlineLabel": "Deadline"
+          }
+        }
+        """.utf8)
+
+        let metadata = parseSynthesisMetadata(from: json)
+
+        XCTAssertEqual(metadata?.meetingTitle, "Weekly Sync")
+        XCTAssertEqual(metadata?.decisions, ["Ship on Friday"])
+        XCTAssertEqual(metadata?.actionItems.first?.task, "Fix bug")
+        XCTAssertEqual(metadata?.actionItems.first?.owner, "An")
+        XCTAssertEqual(metadata?.labels.topicsHeading, "Topics Discussed")
+    }
+
+    func testParseSynthesisMetadataFallsBackToVietnameseLabelsWhenMissing() {
+        let json = Data("""
+        {"meetingTitle": "T", "topicSentence": "", "participants": [], "summary": "", "decisions": [], "actionItems": [], "labels": {}}
+        """.utf8)
+
+        let metadata = parseSynthesisMetadata(from: json)
+
+        XCTAssertEqual(metadata?.labels, SynthesisLabels.defaultVietnamese)
+    }
+
+    func testParseSynthesisMetadataReturnsNilWhenTitleMissing() {
+        let json = Data("""
+        {"meetingTitle": "", "topicSentence": "", "participants": [], "summary": "", "decisions": [], "actionItems": [], "labels": {}}
+        """.utf8)
+
+        XCTAssertNil(parseSynthesisMetadata(from: json))
+    }
+
+    func testAssembleFinalNotePastesTopicContentVerbatim() {
+        let metadata = SynthesisMetadata(
+            meetingTitle: "Weekly Sync",
+            topicSentence: "Progress update",
+            participants: ["An"],
+            summary: "unique-summary-text",
+            decisions: ["unique-decision-text"],
+            actionItems: [SynthesisActionItem(task: "unique-task-text", owner: "An", deadline: "Friday")],
+            labels: .defaultVietnamese
+        )
+        let topicFindings = [(title: "PCB design", content: "unique-verbatim-topic-content-with-lots-of-detail")]
+
+        let note = assembleFinalNote(today: "30/08/2026", metadata: metadata, topicFindings: topicFindings)
+
+        XCTAssertTrue(note.contains("unique-verbatim-topic-content-with-lots-of-detail"))
+        XCTAssertTrue(note.contains("unique-summary-text"))
+        XCTAssertTrue(note.contains("unique-decision-text"))
+        XCTAssertTrue(note.contains("unique-task-text"))
+        XCTAssertTrue(note.contains("# Weekly Sync"))
+        XCTAssertTrue(note.contains("## Thông tin chung"))
+    }
+
+    func testAssembleFinalNoteUsesCustomLabelsWhenProvided() {
+        let customLabels = SynthesisLabels(
+            generalInfoHeading: "General Info",
+            dateLabel: "Date",
+            topicLabel: "Topic",
+            participantsLabel: "Participants",
+            summaryHeading: "Summary",
+            topicsHeading: "Topics Discussed",
+            decisionsHeading: "Decisions",
+            actionItemsHeading: "Action Items",
+            ownerLabel: "Owner",
+            deadlineLabel: "Deadline"
+        )
+        let metadata = SynthesisMetadata(
+            meetingTitle: "Weekly Sync",
+            topicSentence: "",
+            participants: [],
+            summary: "",
+            decisions: [],
+            actionItems: [],
+            labels: customLabels
+        )
+
+        let note = assembleFinalNote(today: "30/08/2026", metadata: metadata, topicFindings: [])
+
+        XCTAssertTrue(note.contains("## General Info"))
+        XCTAssertTrue(note.contains("## Topics Discussed"))
+        XCTAssertFalse(note.contains("Thông tin chung"))
     }
 }

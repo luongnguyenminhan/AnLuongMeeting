@@ -122,4 +122,87 @@ final class MemoryStoreTests: XCTestCase {
 
         XCTAssertEqual(result, "Celesnity met with Celesnity team.")
     }
+
+    func testApplyGlossaryCorrectionsRewritesKnownMishearingsToCanonicalSpelling() {
+        let pairs: [(alias: String, canonical: String)] = [(alias: "Celesta", canonical: "Celesnity")]
+
+        let result = applyGlossaryCorrections("Đây là Celesta thì là công ty của An.", pairs: pairs)
+
+        XCTAssertEqual(result, "Đây là Celesnity thì là công ty của An.")
+    }
+
+    func testApplyGlossaryCorrectionsAppliesLongestAliasFirst() {
+        let pairs: [(alias: String, canonical: String)] = [
+            (alias: "An", canonical: "AN-SHOULD-NOT-MATCH"),
+            (alias: "Truong An", canonical: "Trường An")
+        ]
+
+        let result = applyGlossaryCorrections("Truong An is the candidate.", pairs: pairs)
+
+        XCTAssertEqual(result, "Trường An is the candidate.")
+    }
+
+    func testGlossaryCorrectionPairsOnlyIncludesConfirmedEntriesWithAliases() {
+        var memory = MemoryData()
+        memory.glossary = [
+            GlossaryEntry(term: "Celesnity", category: .project, source: .manual, confirmed: true, aliases: ["Celesta"]),
+            GlossaryEntry(term: "Unconfirmed", category: .project, source: .suggested, confirmed: false, aliases: ["Unconf"])
+        ]
+        memory.participants = [
+            Participant(name: "Trường An", source: .manual, confirmed: true, aliases: ["Truong An"])
+        ]
+
+        let pairs = memory.glossaryCorrectionPairs()
+
+        XCTAssertEqual(pairs.count, 2)
+        XCTAssertTrue(pairs.contains { $0.alias == "Celesta" && $0.canonical == "Celesnity" })
+        XCTAssertTrue(pairs.contains { $0.alias == "Truong An" && $0.canonical == "Trường An" })
+    }
+
+    func testMergeGlossaryAsAliasMovesRejectedTermOntoTargetAndRemovesIt() {
+        var memory = MemoryData()
+        let target = GlossaryEntry(term: "Celesnity", category: .project, source: .manual, confirmed: true)
+        let rejected = GlossaryEntry(term: "Celesta", category: .project, source: .suggested, confirmed: false)
+        memory.glossary = [target, rejected]
+
+        memory.mergeGlossaryAsAlias(id: rejected.id, intoTermID: target.id)
+
+        XCTAssertEqual(memory.glossary.count, 1)
+        XCTAssertEqual(memory.glossary.first?.aliases, ["Celesta"])
+        XCTAssertTrue(memory.renderForPrompt().contains("Celesnity (also heard as: Celesta)"))
+    }
+
+    func testMergeParticipantAsAliasMovesRejectedNameOntoTargetAndRemovesIt() {
+        var memory = MemoryData()
+        let target = Participant(name: "Trường An", source: .manual, confirmed: true)
+        let rejected = Participant(name: "Truong An", source: .suggested, confirmed: false)
+        memory.participants = [target, rejected]
+
+        memory.mergeParticipantAsAlias(id: rejected.id, intoParticipantID: target.id)
+
+        XCTAssertEqual(memory.participants.count, 1)
+        XCTAssertEqual(memory.participants.first?.aliases, ["Truong An"])
+    }
+
+    func testWrapTermsAsLinksWrapsConfirmedGlossaryAndParticipantMentions() {
+        let entry = GlossaryEntry(term: "Celesnity", category: .project, source: .manual, confirmed: true)
+        let participant = Participant(name: "Eric Nguyen", source: .manual, confirmed: true)
+        let terms = termHighlights(glossary: [entry], participants: [participant])
+
+        let result = wrapTermsAsLinks(in: "Celesnity met with Eric Nguyen today.", terms: terms)
+
+        XCTAssertEqual(
+            result,
+            "[Celesnity](anluong-term://\(entry.id)) met with [Eric Nguyen](anluong-term://\(participant.id)) today."
+        )
+    }
+
+    func testTermHighlightsExcludeUnconfirmedEntries() {
+        let confirmed = GlossaryEntry(term: "Celesnity", category: .project, source: .manual, confirmed: true)
+        let pending = GlossaryEntry(term: "Celesta", category: .project, source: .suggested, confirmed: false)
+
+        let terms = termHighlights(glossary: [confirmed, pending], participants: [])
+
+        XCTAssertEqual(terms.map(\.displayText), ["Celesnity"])
+    }
 }

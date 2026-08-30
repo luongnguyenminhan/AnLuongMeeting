@@ -520,18 +520,17 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
         return body
     }
 
-    func generateStructuredJSON(prompt: String, schema: [String: Any], apiKey: String) async throws -> Data {
+    func generateStructuredJSON(prompt: String, schema: [String: Any], systemInstruction: String? = nil, apiKey: String) async throws -> Data {
         let url = baseURL.appendingPathComponent("v1beta/models/\(Self.model):generateContent").appending(queryItems: [URLQueryItem(name: "key", value: apiKey)])
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "contents": [["parts": [["text": prompt]]]],
-            "generationConfig": [
-                "responseMimeType": "application/json",
-                "responseSchema": schema
-            ]
-        ])
+        var body = Self.requestBody(parts: [["text": prompt]], systemInstruction: systemInstruction)
+        body["generationConfig"] = [
+            "responseMimeType": "application/json",
+            "responseSchema": schema
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         try validate(response)
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],

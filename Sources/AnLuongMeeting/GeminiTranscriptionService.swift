@@ -10,6 +10,14 @@ struct TranscriptionProgress: Sendable {
     let stage: TranscriptionProgressStage
     let currentSegment: Int
     let totalSegments: Int
+    let message: String
+
+    init(stage: TranscriptionProgressStage, currentSegment: Int, totalSegments: Int, message: String = "") {
+        self.stage = stage
+        self.currentSegment = currentSegment
+        self.totalSegments = totalSegments
+        self.message = message
+    }
 }
 
 struct TranscriptionResult: Sendable {
@@ -80,10 +88,12 @@ actor GeminiTranscriptionService {
 
 
     If you not hear any speak, just said there is no speaker in the audio, skip the background noise, only focus on the speaker. NO EXTRA INFORMATION NEEDED.
+
+    IMPORTANT — known spelling corrections: if the system instruction lists a confirmed term/name together with variants marked "also heard as: ...", and you hear one of those variants in this audio, transcribe it using the confirmed spelling instead of the mishearing. This is fixing a known transcription error, not adding information.
     """
 
     static func meetingNotePrompt(today: String, detailAddendum: String) -> String {
-        baseMeetingNotePrompt(today: today) + detailAddendum + "\n\nBẢN CHÉP LỜI:\n"
+        baseMeetingNotePrompt(today: today) + spellingCorrectionInstruction + detailAddendum + "\n\nBẢN CHÉP LỜI:\n"
     }
 
     private static func baseMeetingNotePrompt(today: String) -> String {
@@ -144,7 +154,9 @@ actor GeminiTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String? = nil,
-        progress: @escaping @Sendable (TranscriptionProgress) -> Void
+        glossaryCorrections: [(alias: String, canonical: String)] = [],
+        progress: @escaping @Sendable (TranscriptionProgress) -> Void,
+        trace: @escaping LLMTraceFunc = noopTrace
     ) async throws -> TranscriptionResult {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
@@ -184,19 +196,24 @@ actor GeminiTranscriptionService {
             progress(TranscriptionProgress(
                 stage: .segment,
                 currentSegment: index + 1,
-                totalSegments: totalSegments
+                totalSegments: totalSegments,
+                message: "Transcribing segment \(index + 1) of \(totalSegments)…"
             ))
 
             let transcript = try await transcribeSegment(
                 segmentURL: segmentURL,
                 apiKey: key,
                 memoryContext: memoryContext,
-                segmentNumber: index + 1
+                segmentNumber: index + 1,
+                trace: trace
             )
             transcripts.append(transcript)
         }
 
-        let mergedTranscript = transcripts.joined(separator: "\n\n") + "\n"
+        let mergedTranscript = applyGlossaryCorrections(
+            transcripts.joined(separator: "\n\n") + "\n",
+            pairs: glossaryCorrections
+        )
         let transcriptURL = recordingURL.deletingLastPathComponent().appendingPathComponent("transcript.txt")
         try Data(mergedTranscript.utf8).write(to: transcriptURL, options: .atomic)
 
@@ -207,7 +224,8 @@ actor GeminiTranscriptionService {
                 apiKey: key,
                 memoryContext: memoryContext,
                 meetingDate: Self.todayString(),
-                progress: progress
+                progress: progress,
+                trace: trace
             )
         } catch {
             throw GeminiTranscriptionError.meetingNoteFailed(error.localizedDescription)
@@ -234,7 +252,9 @@ actor GeminiTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String? = nil,
-        progress: @escaping @Sendable (TranscriptionProgress) -> Void
+        glossaryCorrections: [(alias: String, canonical: String)] = [],
+        progress: @escaping @Sendable (TranscriptionProgress) -> Void,
+        trace: @escaping LLMTraceFunc = noopTrace
     ) async throws -> URL {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
@@ -274,19 +294,24 @@ actor GeminiTranscriptionService {
             progress(TranscriptionProgress(
                 stage: .segment,
                 currentSegment: index + 1,
-                totalSegments: totalSegments
+                totalSegments: totalSegments,
+                message: "Transcribing segment \(index + 1) of \(totalSegments)…"
             ))
 
             let transcript = try await transcribeSegment(
                 segmentURL: segmentURL,
                 apiKey: key,
                 memoryContext: memoryContext,
-                segmentNumber: index + 1
+                segmentNumber: index + 1,
+                trace: trace
             )
             transcripts.append(transcript)
         }
 
-        let mergedTranscript = transcripts.joined(separator: "\n\n") + "\n"
+        let mergedTranscript = applyGlossaryCorrections(
+            transcripts.joined(separator: "\n\n") + "\n",
+            pairs: glossaryCorrections
+        )
         let transcriptURL = recordingURL.deletingLastPathComponent().appendingPathComponent("transcript.txt")
         try Data(mergedTranscript.utf8).write(to: transcriptURL, options: .atomic)
         return transcriptURL
@@ -298,14 +323,20 @@ actor GeminiTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String? = nil,
-        progress: @escaping @Sendable (TranscriptionProgress) -> Void = { _ in }
+        glossaryCorrections: [(alias: String, canonical: String)] = [],
+        progress: @escaping @Sendable (TranscriptionProgress) -> Void = { _ in },
+        trace: @escaping LLMTraceFunc = noopTrace
     ) async throws -> URL {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
 
-        let transcript = try String(contentsOf: transcriptURL, encoding: .utf8)
-        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let rawTranscript = try String(contentsOf: transcriptURL, encoding: .utf8)
+        guard !rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw GeminiTranscriptionError.emptyTranscript(0)
+        }
+        let transcript = applyGlossaryCorrections(rawTranscript, pairs: glossaryCorrections)
+        if transcript != rawTranscript {
+            try? Data(transcript.utf8).write(to: transcriptURL, options: .atomic)
         }
 
         let meetingNote = try await generateMeetingNote(
@@ -313,7 +344,8 @@ actor GeminiTranscriptionService {
             apiKey: key,
             memoryContext: memoryContext,
             meetingDate: Self.todayString(),
-            progress: progress
+            progress: progress,
+            trace: trace
         )
 
         let meetingNoteURL = recordingURL
@@ -328,7 +360,8 @@ actor GeminiTranscriptionService {
         segmentURL: URL,
         apiKey: String,
         memoryContext: String?,
-        segmentNumber: Int
+        segmentNumber: Int,
+        trace: @escaping LLMTraceFunc = noopTrace
     ) async throws -> String {
         let remoteFile = try await uploadAndWait(fileURL: segmentURL, apiKey: apiKey)
 
@@ -340,8 +373,10 @@ actor GeminiTranscriptionService {
             )
             let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
+                await trace("transcribe-segment-\(segmentNumber)", Self.transcriptionPrompt, "", false)
                 throw GeminiTranscriptionError.emptyTranscript(segmentNumber)
             }
+            await trace("transcribe-segment-\(segmentNumber)", Self.transcriptionPrompt, trimmed, true)
             await deleteRemoteFile(named: remoteFile.name, apiKey: apiKey)
             return trimmed
         } catch {
@@ -430,14 +465,16 @@ actor GeminiTranscriptionService {
         apiKey: String,
         memoryContext: String?,
         meetingDate: String,
-        progress: @escaping @Sendable (TranscriptionProgress) -> Void
+        progress: @escaping @Sendable (TranscriptionProgress) -> Void,
+        trace: @escaping LLMTraceFunc = noopTrace
     ) async throws -> String {
         try await generateMeetingNoteViaResearchTree(
             transcript: transcript,
             apiKey: apiKey,
             memoryContext: memoryContext,
             meetingDate: meetingDate,
-            progress: progress
+            progress: progress,
+            trace: trace
         )
     }
 
@@ -445,30 +482,34 @@ actor GeminiTranscriptionService {
         transcript: String,
         note: String,
         currentMemory: String,
-        apiKey: String
+        apiKey: String,
+        trace: @escaping LLMTraceFunc = noopTrace
     ) async throws -> MemoryDraft {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
-        let json = try await generateStructuredJSON(
-            prompt: Self.memorySuggestionPrompt(transcript: transcript, note: note, currentMemory: currentMemory),
-            schema: Self.memorySuggestionSchema(),
-            apiKey: key
-        )
-        return Self.parseMemoryDraft(from: json)
+        let prompt = Self.memorySuggestionPrompt(transcript: transcript, note: note, currentMemory: currentMemory)
+        do {
+            let json = try await generateStructuredJSON(prompt: prompt, schema: Self.memorySuggestionSchema(), apiKey: key)
+            let raw = String(data: json, encoding: .utf8) ?? ""
+            await trace("memory-suggestions", prompt, raw, true)
+            return Self.parseMemoryDraft(from: json)
+        } catch {
+            await trace("memory-suggestions", prompt, "\(error)", false)
+            throw error
+        }
     }
 
-    func generateStructuredJSON(prompt: String, schema: [String: Any], apiKey: String) async throws -> Data {
+    func generateStructuredJSON(prompt: String, schema: [String: Any], systemInstruction: String? = nil, apiKey: String) async throws -> Data {
         let url = apiURL(path: "v1beta/models/\(Self.model):generateContent", apiKey: apiKey)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "contents": [["parts": [["text": prompt]]]],
-            "generationConfig": [
-                "responseMimeType": "application/json",
-                "responseSchema": schema
-            ]
-        ])
+        var body = Self.requestBody(parts: [["text": prompt]], systemInstruction: systemInstruction)
+        body["generationConfig"] = [
+            "responseMimeType": "application/json",
+            "responseSchema": schema
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         try validate(response, data: data)
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],

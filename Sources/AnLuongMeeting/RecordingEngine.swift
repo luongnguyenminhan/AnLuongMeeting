@@ -34,6 +34,11 @@ final class RecordingEngine: ObservableObject {
     }
     @Published private(set) var lastOutputURL: URL?
     @Published private(set) var processingRecordingURL: URL?
+    /// Step-by-step log of the most recent transcribe/regenerate run, retained after it
+    /// finishes so the meeting detail screen can show what happened (e.g. which topics the
+    /// note-generation tree pipeline explored). Reset at the start of the next run.
+    @Published private(set) var progressLog: [String] = []
+    @Published private(set) var progressLogRecordingURL: URL?
     @Published private(set) var systemLevel: Float = 0
     @Published private(set) var micLevel: Float = 0
     /// True while a recording is running WITHOUT system audio (permission
@@ -67,6 +72,9 @@ final class RecordingEngine: ObservableObject {
     /// showing a specific meeting's corrections observe this to know when to reload, since the
     /// analysis runs in a detached Task that outlives the regenerate/transcribe call that started it.
     @Published private(set) var lastMemoryRefreshToken = UUID()
+    /// Bumped whenever a generation run finishes writing its `trace.json` sidecar — the
+    /// traceability sidebar observes this to know when to reload for the current meeting.
+    @Published private(set) var lastTraceRefreshToken = UUID()
     private var transcriptionTask: Task<Void, Never>?
     private var systemCapture: SystemAudioCapture?
     private var micCapture: MicrophoneCapture?
@@ -308,18 +316,24 @@ final class RecordingEngine: ObservableObject {
         transcriptionTask?.cancel()
         isTranscribing = true
         transcriptionState = .processing(current: 0, total: 0)
+        beginProgressLog(for: recordingURL)
         let service = transcriptionService
 
-        let memoryContext = memoryStore.load().renderForPrompt()
+        let memory = memoryStore.load()
+        let memoryContext = memory.renderForPrompt()
+        let glossaryCorrections = memory.glossaryCorrectionPairs()
+        let recorder = LLMTraceRecorder()
         transcriptionTask = Task { @MainActor [weak self] in
             do {
                 let result = try await service.transcribe(
                     recordingURL: recordingURL,
                     apiKey: key,
                     memoryContext: memoryContext,
+                    glossaryCorrections: glossaryCorrections,
                     progress: { [weak self] progress in
                         Task { @MainActor in
                             guard let self else { return }
+                            self.appendProgressLog(progress)
                             switch progress.stage {
                             case .segment:
                                 self.transcriptionState = .processing(
@@ -333,7 +347,8 @@ final class RecordingEngine: ObservableObject {
                                 )
                             }
                         }
-                    }
+                    },
+                    trace: recorder.asTraceFunction()
                 )
                 guard !Task.isCancelled else { return }
                 self?.transcriptionState = .completed(
@@ -359,11 +374,26 @@ final class RecordingEngine: ObservableObject {
                 self?.notifyLibraryChanged()
                 Log.write("Gemini transcription or meeting note failed — \(error.localizedDescription)")
             }
+            try? LLMTraceStore(directory: recordingURL.deletingLastPathComponent()).save(await recorder.entries)
+            self?.lastTraceRefreshToken = UUID()
         }
     }
 
     private func notifyLibraryChanged() {
         NotificationCenter.default.post(name: .anluongLibraryDidChange, object: nil)
+    }
+
+    private func beginProgressLog(for recordingURL: URL) {
+        progressLog = []
+        progressLogRecordingURL = recordingURL
+    }
+
+    private func appendProgressLog(_ progress: TranscriptionProgress) {
+        let prefix = progress.stage == .segment ? "Transcript" : "Note"
+        let text = progress.message.isEmpty
+            ? "\(prefix): step \(progress.currentSegment) of \(progress.totalSegments)"
+            : "\(prefix): \(progress.message)"
+        progressLog.append(text)
     }
 
     func refreshPendingMemoryCount() {
@@ -512,11 +542,15 @@ final class RecordingEngine: ObservableObject {
         transcriptionTask?.cancel()
         isTranscribing = true
         processingRecordingURL = meeting.recordingURL
+        beginProgressLog(for: meeting.recordingURL)
         notifyLibraryChanged()
 
         let service = transcriptionService
         let recordingURL = meeting.recordingURL
-        let memoryContext = memoryStore.load().renderForPrompt()
+        let memory = memoryStore.load()
+        let memoryContext = memory.renderForPrompt()
+        let glossaryCorrections = memory.glossaryCorrectionPairs()
+        let recorder = LLMTraceRecorder()
 
         transcriptionTask = Task { @MainActor [weak self] in
             do {
@@ -527,15 +561,18 @@ final class RecordingEngine: ObservableObject {
                         recordingURL: recordingURL,
                         apiKey: key,
                         memoryContext: memoryContext,
+                        glossaryCorrections: glossaryCorrections,
                         progress: { [weak self] progress in
                             Task { @MainActor in
                                 guard let self else { return }
+                                self.appendProgressLog(progress)
                                 self.transcriptionState = .processing(
                                     current: progress.currentSegment,
                                     total: progress.totalSegments
                                 )
                             }
-                        }
+                        },
+                        trace: recorder.asTraceFunction()
                     )
                     guard !Task.isCancelled else { return }
                     self?.transcriptionState = .completed(
@@ -553,15 +590,18 @@ final class RecordingEngine: ObservableObject {
                         recordingURL: recordingURL,
                         apiKey: key,
                         memoryContext: memoryContext,
+                        glossaryCorrections: glossaryCorrections,
                         progress: { [weak self] progress in
                             Task { @MainActor in
                                 guard let self else { return }
+                                self.appendProgressLog(progress)
                                 self.transcriptionState = .generatingMeetingNote(
                                     current: progress.currentSegment,
                                     total: progress.totalSegments
                                 )
                             }
-                        }
+                        },
+                        trace: recorder.asTraceFunction()
                     )
                     guard !Task.isCancelled else { return }
                     self?.transcriptionState = .completed(
@@ -576,9 +616,11 @@ final class RecordingEngine: ObservableObject {
                         recordingURL: recordingURL,
                         apiKey: key,
                         memoryContext: memoryContext,
+                        glossaryCorrections: glossaryCorrections,
                         progress: { [weak self] progress in
                             Task { @MainActor in
                                 guard let self else { return }
+                                self.appendProgressLog(progress)
                                 switch progress.stage {
                                 case .segment:
                                     self.transcriptionState = .processing(
@@ -592,7 +634,8 @@ final class RecordingEngine: ObservableObject {
                                 )
                                 }
                             }
-                        }
+                        },
+                        trace: recorder.asTraceFunction()
                     )
                     guard !Task.isCancelled else { return }
                     self?.transcriptionState = .completed(
@@ -620,6 +663,8 @@ final class RecordingEngine: ObservableObject {
                 self?.notifyLibraryChanged()
                 Log.write("regeneration failed — \(error.localizedDescription)")
             }
+            try? LLMTraceStore(directory: recordingURL.deletingLastPathComponent()).save(await recorder.entries)
+            self?.lastTraceRefreshToken = UUID()
         }
     }
 }

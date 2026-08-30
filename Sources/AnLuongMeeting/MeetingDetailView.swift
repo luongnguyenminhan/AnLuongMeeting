@@ -12,8 +12,10 @@ struct MeetingDetailView: View {
     @State private var selectedTab: DetailTab
     @State private var isActionsPopoverPresented = false
     @State private var corrections: [NoteCorrection] = []
-    @State private var activeCorrection: NoteCorrection?
     @State private var correctionError: String?
+    @State private var terms: [TermHighlight] = []
+    @State private var trace: [LLMTraceEntry] = []
+    @State private var isProcessingLogExpanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(meeting: MeetingRecord, engine: RecordingEngine, onRename: @escaping () -> Void, onDelete: @escaping () -> Void) {
@@ -27,23 +29,21 @@ struct MeetingDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            #if DEBUG
+            processingLogSection
+            #endif
             tabBar
             artifactContent
         }
         .background(AnLuongPalette.readingSurface)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { loadCorrections() }
+        .onAppear { loadCorrections(); loadTrace() }
         .onChange(of: engine.lastMemoryRefreshToken) { _, _ in loadCorrections() }
+        .onChange(of: engine.lastTraceRefreshToken) { _, _ in loadTrace() }
         .onChange(of: meeting.id) { _, _ in
             selectedTab = meeting.meetingNoteURL != nil ? .meetingNote : .transcript
             loadCorrections()
-        }
-        .popover(item: $activeCorrection) { correction in
-            CorrectionPickerView(
-                correction: correction,
-                onChoose: { chosenText in applyCorrectionChoice(correction, chosenText: chosenText) },
-                onKeepOriginal: { applyCorrectionChoice(correction, chosenText: nil) }
-            )
+            loadTrace()
         }
         .alert(
             "Could not save correction",
@@ -108,6 +108,112 @@ struct MeetingDetailView: View {
         }
         .padding(26)
         .background(AnLuongPalette.graphite)
+    }
+
+    @ViewBuilder
+    private var processingLogSection: some View {
+        let showsLiveLog = engine.progressLogRecordingURL == meeting.recordingURL && !engine.progressLog.isEmpty
+        if showsLiveLog || !trace.isEmpty {
+            let isActive = engine.isTranscribing && engine.processingRecordingURL == meeting.recordingURL
+            DisclosureGroup(isExpanded: $isProcessingLogExpanded) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if showsLiveLog {
+                        ScrollViewReader { scrollProxy in
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(Array(engine.progressLog.enumerated()), id: \.offset) { index, line in
+                                        Text(line)
+                                            .font(AnLuongTypography.mono(11))
+                                            .foregroundStyle(AnLuongPalette.ivory.opacity(0.8))
+                                            .id(index)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 8)
+                            }
+                            .frame(maxHeight: 160)
+                            .onChange(of: engine.progressLog.count) { _, _ in
+                                guard let lastIndex = engine.progressLog.indices.last else { return }
+                                withAnimation(reduceMotion ? nil : AnLuongMotion.gentle) {
+                                    scrollProxy.scrollTo(lastIndex, anchor: .bottom)
+                                }
+                            }
+                        }
+                    }
+                    if !trace.isEmpty {
+                        if showsLiveLog {
+                            Divider().padding(.vertical, 8)
+                            Text("RAW LLM INPUT/OUTPUT — \(trace.count) call\(trace.count == 1 ? "" : "s")")
+                                .font(AnLuongTypography.mono(10).weight(.semibold))
+                                .tracking(1.2)
+                                .foregroundStyle(AnLuongPalette.ivory.opacity(0.6))
+                                .padding(.bottom, 4)
+                        }
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                ForEach(trace) { entry in
+                                    traceRow(entry)
+                                    Divider().overlay(AnLuongPalette.ivory.opacity(0.12))
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 420)
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if isActive {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text("Processing Log")
+                        .font(AnLuongTypography.body(12).weight(.semibold))
+                        .foregroundStyle(AnLuongPalette.ivory)
+                    Spacer()
+                    Text(!trace.isEmpty
+                        ? "\(trace.count) LLM call\(trace.count == 1 ? "" : "s")"
+                        : "\(engine.progressLog.count) step\(engine.progressLog.count == 1 ? "" : "s")")
+                        .font(AnLuongTypography.body(11))
+                        .foregroundStyle(AnLuongPalette.ivory.opacity(0.6))
+                }
+            }
+            .tint(AnLuongPalette.ivory)
+            .padding(.horizontal, 26)
+            .padding(.vertical, 10)
+            .background(AnLuongPalette.graphiteRaised)
+        }
+    }
+
+    /// One raw LLM call — stage, full prompt, full response, no truncation, selectable for
+    /// copying while debugging why the note went wrong.
+    private func traceRow(_ entry: LLMTraceEntry) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(entry.stage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AnLuongPalette.ivory)
+                if !entry.succeeded {
+                    Text("FAILED")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.red)
+                }
+                Spacer()
+                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                    .font(.caption2)
+                    .foregroundStyle(AnLuongPalette.ivory.opacity(0.5))
+            }
+            Text("PROMPT").font(.caption2.weight(.semibold)).foregroundStyle(AnLuongPalette.ivory.opacity(0.5))
+            Text(entry.prompt)
+                .font(AnLuongTypography.mono(11))
+                .foregroundStyle(AnLuongPalette.ivory.opacity(0.85))
+                .textSelection(.enabled)
+            Text("RESPONSE").font(.caption2.weight(.semibold)).foregroundStyle(AnLuongPalette.ivory.opacity(0.5))
+            Text(entry.response)
+                .font(AnLuongTypography.mono(11))
+                .foregroundStyle(AnLuongPalette.ivory.opacity(0.85))
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -197,7 +303,9 @@ struct MeetingDetailView: View {
                     reduceMotion: reduceMotion,
                     rendersMarkdown: true,
                     corrections: corrections,
-                    onCorrectionTap: { activeCorrection = $0 }
+                    onCorrectionResolved: { correction, chosenText in applyCorrectionChoice(correction, chosenText: chosenText) },
+                    terms: terms,
+                    onTermCorrectionSubmitted: { term, chosenText in applyTermCorrection(term, chosenText: chosenText) }
                 )
             } else {
                 AnLuongEmptyState(
@@ -219,7 +327,7 @@ struct MeetingDetailView: View {
                let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8) {
                 let sections = transcriptSections(from: transcript)
                 if sections.count > 1 {
-                    TranscriptAccordionView(sections: sections, reduceMotion: reduceMotion)
+                    TranscriptConversationView(sections: sections, reduceMotion: reduceMotion)
                 } else {
                     ReadOnlyArtifactView(
                         text: transcript,
@@ -249,31 +357,15 @@ struct MeetingDetailView: View {
         return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 
-    private func transcriptSections(from text: String) -> [TranscriptSection] {
-        var sections: [TranscriptSection] = []
-        var currentSpeaker = "Transcript"
-        var currentLines: [String] = []
 
-        func appendCurrent() {
-            let content = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !content.isEmpty else { return }
-            sections.append(TranscriptSection(id: sections.count, speaker: currentSpeaker, text: content))
-            currentLines.removeAll(keepingCapacity: true)
-        }
-
-        for line in text.components(separatedBy: .newlines) {
-            if line.hasPrefix("SPEAKER_") && line.hasSuffix(":") {
-                appendCurrent()
-                currentSpeaker = String(line.dropLast())
-            } else {
-                currentLines.append(line)
-            }
-        }
-        appendCurrent()
-        return sections
+    private func loadTrace() {
+        let directory = (meeting.meetingNoteURL ?? meeting.transcriptURL ?? meeting.recordingURL).deletingLastPathComponent()
+        trace = LLMTraceStore(directory: directory).load()
     }
 
     private func loadCorrections() {
+        let memory = engine.memoryStore.load()
+        terms = termHighlights(glossary: memory.glossary, participants: memory.participants)
         guard let noteURL = meeting.meetingNoteURL else { corrections = []; return }
         corrections = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent()).load()
     }
@@ -291,17 +383,30 @@ struct MeetingDetailView: View {
                 var memory = engine.memoryStore.load()
                 switch updatedCorrection.kind {
                 case .glossaryTerm:
-                    if let index = memory.glossary.firstIndex(where: { $0.term == chosenText }),
-                       !memory.glossary[index].aliases.contains(correction.wrongText) {
-                        memory.glossary[index].aliases.append(correction.wrongText)
+                    if let index = memory.glossary.firstIndex(where: { $0.term == chosenText }) {
+                        if !memory.glossary[index].aliases.contains(correction.wrongText) {
+                            memory.glossary[index].aliases.append(correction.wrongText)
+                        }
+                    } else {
+                        memory.glossary.append(GlossaryEntry(
+                            term: chosenText, category: .project, source: .manual, confirmed: true,
+                            aliases: [correction.wrongText]
+                        ))
                     }
                 case .participantName:
-                    if let index = memory.participants.firstIndex(where: { $0.name == chosenText }),
-                       !memory.participants[index].aliases.contains(correction.wrongText) {
-                        memory.participants[index].aliases.append(correction.wrongText)
+                    if let index = memory.participants.firstIndex(where: { $0.name == chosenText }) {
+                        if !memory.participants[index].aliases.contains(correction.wrongText) {
+                            memory.participants[index].aliases.append(correction.wrongText)
+                        }
+                    } else {
+                        memory.participants.append(Participant(
+                            name: chosenText, source: .manual, confirmed: true,
+                            aliases: [correction.wrongText]
+                        ))
                     }
                 }
                 try engine.memoryStore.save(memory)
+                terms = termHighlights(glossary: memory.glossary, participants: memory.participants)
             } else {
                 updatedCorrection.status = .keptOriginal
             }
@@ -310,12 +415,30 @@ struct MeetingDetailView: View {
             var all = store.load()
             if let index = all.firstIndex(where: { $0.id == correction.id }) {
                 all[index] = updatedCorrection
+            } else {
+                all.append(updatedCorrection)
             }
             try store.save(all)
             corrections = all
         } catch {
             correctionError = error.localizedDescription
         }
+    }
+
+    /// Lets a user dispute a highlighted term/name directly from its explain popup — not just
+    /// pre-flagged ASR corrections. Reuses `applyCorrectionChoice` so the fix is applied to the
+    /// note text and promoted into memory the same way an accepted flagged correction is,
+    /// which is exactly the "store it to improve accuracy later" behavior for a manual fix too.
+    private func applyTermCorrection(_ term: TermHighlight, chosenText: String) {
+        let trimmed = chosenText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wrongText: String
+        let kind: CorrectionKind
+        switch term.kind {
+        case .glossary(let entry): wrongText = entry.term; kind = .glossaryTerm
+        case .participant(let participant): wrongText = participant.name; kind = .participantName
+        }
+        guard !trimmed.isEmpty, trimmed != wrongText else { return }
+        applyCorrectionChoice(NoteCorrection(wrongText: wrongText, correctText: trimmed, kind: kind), chosenText: trimmed)
     }
 
     private enum DetailTab: Hashable {
@@ -359,20 +482,79 @@ enum MeetingDetailAction: CaseIterable, Equatable, Hashable {
     }
 }
 
-private struct TranscriptSection: Identifiable {
+struct TranscriptSection: Identifiable, Equatable {
     let id: Int
     let speaker: String
     let text: String
 }
 
-private struct TranscriptAccordionView: View {
+/// Groups the transcript into one section per speaker turn, merging consecutive lines from
+/// the same speaker. Handles both the label-then-newline format ("SPEAKER_0:\ntext") and the
+/// inline format Gemini actually produces ("SPEAKER_0: text" on one line) — a parser written
+/// only for the former silently produced a single giant unlabeled section for the latter,
+/// which is why the transcript view fell back to flat, unformatted text.
+func transcriptSections(from text: String) -> [TranscriptSection] {
+    var sections: [TranscriptSection] = []
+    var currentSpeaker: String?
+    var currentLines: [String] = []
+
+    func appendCurrent() {
+        let content = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty, let speaker = currentSpeaker else { return }
+        sections.append(TranscriptSection(id: sections.count, speaker: speaker, text: content))
+        currentLines.removeAll(keepingCapacity: true)
+    }
+
+    for line in text.components(separatedBy: .newlines) {
+        if let (speaker, rest) = speakerPrefix(of: line) {
+            if speaker != currentSpeaker {
+                appendCurrent()
+                currentSpeaker = speaker
+            }
+            if !rest.isEmpty { currentLines.append(rest) }
+        } else if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            currentLines.append(line)
+        }
+    }
+    appendCurrent()
+    return sections
+}
+
+/// If `line` starts with a `SPEAKER_<digits>:` label, returns that label and whatever text
+/// follows the colon on the same line (possibly empty). Otherwise `nil`.
+func speakerPrefix(of line: String) -> (speaker: String, rest: String)? {
+    guard let colonIndex = line.firstIndex(of: ":") else { return nil }
+    let label = String(line[line.startIndex..<colonIndex])
+    guard label.hasPrefix("SPEAKER_"), !label.dropFirst("SPEAKER_".count).isEmpty,
+          label.dropFirst("SPEAKER_".count).allSatisfy(\.isNumber) else { return nil }
+    let rest = line[line.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
+    return (label, rest)
+}
+
+/// Renders every turn of the transcript as a color-coded conversation row — each unique
+/// speaker gets a stable accent color (assigned in order of first appearance) so a reader
+/// can follow who's talking at a glance without clicking through turns one at a time.
+private struct TranscriptConversationView: View {
     let sections: [TranscriptSection]
     let reduceMotion: Bool
-    @State private var expandedID: Int?
+
+    private static let speakerPalette: [Color] = [
+        AnLuongPalette.clay, AnLuongPalette.mistBlue, AnLuongPalette.sage,
+        AnLuongPalette.mutedInk, AnLuongPalette.clayDark, AnLuongPalette.mistBlueDark
+    ]
+
+    private var speakerColors: [String: Color] {
+        var colors: [String: Color] = [:]
+        for section in sections where colors[section.speaker] == nil {
+            colors[section.speaker] = Self.speakerPalette[colors.count % Self.speakerPalette.count]
+        }
+        return colors
+    }
 
     var body: some View {
+        let colors = speakerColors
         ScrollView {
-            LazyVStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("Speaker transcript")
                         .font(AnLuongTypography.body(12).weight(.semibold))
@@ -382,65 +564,61 @@ private struct TranscriptAccordionView: View {
                         .font(AnLuongTypography.mono(10))
                         .foregroundStyle(AnLuongPalette.mutedInk.opacity(0.72))
                 }
-                .padding(.bottom, 5)
+                .padding(.bottom, 20)
 
-                ForEach(sections) { section in
-                    accordionRow(section)
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(sections) { section in
+                        turnRow(section, color: colors[section.speaker] ?? AnLuongPalette.mutedInk)
+                    }
                 }
             }
-            .padding(26)
+            .padding(30)
+            .frame(maxWidth: 820, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .modifier(ArtifactReveal(reduceMotion: reduceMotion))
         }
         .scrollIndicators(.hidden)
         .background(AnLuongPalette.readingSurface)
-        .onAppear {
-            if expandedID == nil { expandedID = sections.first?.id }
+    }
+
+    private func turnRow(_ section: TranscriptSection, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            speakerBadge(section.speaker, color: color)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(displayName(for: section.speaker))
+                    .font(AnLuongTypography.body(12).weight(.bold))
+                    .foregroundStyle(color)
+                    .tracking(0.2)
+                Text(section.text)
+                    .font(AnLuongTypography.body(15))
+                    .foregroundStyle(AnLuongPalette.graphite.opacity(0.88))
+                    .lineSpacing(5)
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func accordionRow(_ section: TranscriptSection) -> some View {
-        let isExpanded = expandedID == section.id
-        return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(reduceMotion ? nil : AnLuongMotion.standard) {
-                    expandedID = isExpanded ? nil : section.id
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(isExpanded ? AnLuongPalette.clay : AnLuongPalette.mistBlue)
-                        .frame(width: 9, height: 9)
-                    Text(section.speaker)
-                        .font(AnLuongTypography.body(13).weight(.semibold))
-                        .foregroundStyle(AnLuongPalette.graphite)
-                    Spacer()
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(AnLuongPalette.mutedInk)
-                }
-                .padding(.horizontal, 15)
-                .padding(.vertical, 14)
-                .contentShape(Rectangle())
+    private func speakerBadge(_ speaker: String, color: Color) -> some View {
+        Circle()
+            .fill(color.opacity(0.22))
+            .frame(width: 30, height: 30)
+            .overlay {
+                Text(initial(for: speaker))
+                    .font(AnLuongTypography.body(12).weight(.bold))
+                    .foregroundStyle(color)
             }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(isExpanded ? .isSelected : [])
+    }
 
-            if isExpanded {
-                Text(section.text)
-                    .font(AnLuongTypography.body(14))
-                    .foregroundStyle(AnLuongPalette.graphite.opacity(0.84))
-                    .lineSpacing(4)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 15)
-                    .padding(.bottom, 17)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(Color.white.opacity(0.48), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(isExpanded ? AnLuongPalette.graphite.opacity(0.2) : .clear, lineWidth: 1)
-        }
+    private func displayName(for speaker: String) -> String {
+        guard let number = speaker.split(separator: "_").last else { return speaker }
+        return "Speaker \(number)"
+    }
+
+    private func initial(for speaker: String) -> String {
+        guard let number = speaker.split(separator: "_").last else { return "?" }
+        return String(number.prefix(2))
     }
 }
 
@@ -452,7 +630,9 @@ private struct ReadOnlyArtifactView: View {
     let reduceMotion: Bool
     let rendersMarkdown: Bool
     let corrections: [NoteCorrection]
-    let onCorrectionTap: ((NoteCorrection) -> Void)?
+    let onCorrectionResolved: ((NoteCorrection, String?) -> Void)?
+    let terms: [TermHighlight]
+    let onTermCorrectionSubmitted: ((TermHighlight, String) -> Void)?
 
     init(
         url: URL?,
@@ -461,7 +641,9 @@ private struct ReadOnlyArtifactView: View {
         reduceMotion: Bool,
         rendersMarkdown: Bool = false,
         corrections: [NoteCorrection] = [],
-        onCorrectionTap: ((NoteCorrection) -> Void)? = nil
+        onCorrectionResolved: ((NoteCorrection, String?) -> Void)? = nil,
+        terms: [TermHighlight] = [],
+        onTermCorrectionSubmitted: ((TermHighlight, String) -> Void)? = nil
     ) {
         self.url = url
         self.text = nil
@@ -470,7 +652,9 @@ private struct ReadOnlyArtifactView: View {
         self.reduceMotion = reduceMotion
         self.rendersMarkdown = rendersMarkdown
         self.corrections = corrections
-        self.onCorrectionTap = onCorrectionTap
+        self.onCorrectionResolved = onCorrectionResolved
+        self.terms = terms
+        self.onTermCorrectionSubmitted = onTermCorrectionSubmitted
     }
 
     init(
@@ -487,13 +671,22 @@ private struct ReadOnlyArtifactView: View {
         self.reduceMotion = reduceMotion
         self.rendersMarkdown = rendersMarkdown
         self.corrections = []
-        self.onCorrectionTap = nil
+        self.onCorrectionResolved = nil
+        self.terms = []
+        self.onTermCorrectionSubmitted = nil
     }
 
     var body: some View {
         if let content = resolvedText {
             if rendersMarkdown {
-                MarkdownDocumentView(markdown: content, reduceMotion: reduceMotion, corrections: corrections, onCorrectionTap: onCorrectionTap)
+                MarkdownDocumentView(
+                    markdown: content,
+                    reduceMotion: reduceMotion,
+                    corrections: corrections,
+                    onCorrectionResolved: onCorrectionResolved,
+                    terms: terms,
+                    onTermCorrectionSubmitted: onTermCorrectionSubmitted
+                )
             } else {
                 plainTextView(content)
             }
@@ -707,7 +900,9 @@ private struct MarkdownDocumentView: View {
     let markdown: String
     let reduceMotion: Bool
     var corrections: [NoteCorrection] = []
-    var onCorrectionTap: ((NoteCorrection) -> Void)? = nil
+    var onCorrectionResolved: ((NoteCorrection, String?) -> Void)? = nil
+    var terms: [TermHighlight] = []
+    var onTermCorrectionSubmitted: ((TermHighlight, String) -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -716,7 +911,13 @@ private struct MarkdownDocumentView: View {
 
                 LazyVStack(alignment: .leading, spacing: 17) {
                     ForEach(Array(AnLuongMarkdown.parse(markdown).enumerated()), id: \.offset) { _, block in
-                        MarkdownBlockView(block: block, corrections: corrections)
+                        MarkdownBlockView(
+                            block: block,
+                            corrections: corrections,
+                            onCorrectionResolved: onCorrectionResolved,
+                            terms: terms,
+                            onTermCorrectionSubmitted: onTermCorrectionSubmitted
+                        )
                     }
                 }
                 .frame(maxWidth: 760, alignment: .leading)
@@ -728,12 +929,6 @@ private struct MarkdownDocumentView: View {
         }
         .scrollIndicators(.hidden)
         .background(AnLuongPalette.readingSurface)
-        .environment(\.openURL, OpenURLAction { url in
-            guard url.scheme == "anluong-correction", let id = url.host,
-                  let correction = corrections.first(where: { $0.id == id }) else { return .discarded }
-            onCorrectionTap?(correction)
-            return .handled
-        })
     }
 
     private var documentMasthead: some View {
@@ -755,8 +950,47 @@ private struct MarkdownDocumentView: View {
 private struct MarkdownBlockView: View {
     let block: AnLuongMarkdownBlock
     var corrections: [NoteCorrection] = []
+    var onCorrectionResolved: ((NoteCorrection, String?) -> Void)? = nil
+    var terms: [TermHighlight] = []
+    var onTermCorrectionSubmitted: ((TermHighlight, String) -> Void)? = nil
+    @State private var activeCorrection: NoteCorrection?
+    @State private var activeTerm: TermHighlight?
 
     var body: some View {
+        content
+            // Attached per-block (not once for the whole scrollable note) so a tapped link's
+            // popover anchors near where it was actually tapped, instead of relative to the
+            // top of a note that can be thousands of pixels tall.
+            .environment(\.openURL, OpenURLAction { url in
+                if url.scheme == "anluong-correction", let id = url.host,
+                   let correction = corrections.first(where: { $0.id == id }) {
+                    activeCorrection = correction
+                    return .handled
+                }
+                if url.scheme == "anluong-term", let id = url.host,
+                   let term = terms.first(where: { $0.id == id }) {
+                    activeTerm = term
+                    return .handled
+                }
+                return .discarded
+            })
+            .popover(item: $activeCorrection) { correction in
+                CorrectionPickerView(
+                    correction: correction,
+                    onChoose: { chosenText in onCorrectionResolved?(correction, chosenText) },
+                    onKeepOriginal: { onCorrectionResolved?(correction, nil) }
+                )
+            }
+            .popover(item: $activeTerm) { term in
+                TermExplainView(
+                    term: term,
+                    onSubmitCorrection: { chosenText in onTermCorrectionSubmitted?(term, chosenText) }
+                )
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch block {
         case .heading(let level, let text):
             inlineText(text)
@@ -831,7 +1065,8 @@ private struct MarkdownBlockView: View {
     }
 
     private func inlineText(_ text: String) -> Text {
-        let highlighted = wrapCorrectionsAsLinks(in: text, corrections: corrections)
+        let withCorrections = wrapCorrectionsAsLinks(in: text, corrections: corrections)
+        let highlighted = wrapTermsAsLinks(in: withCorrections, terms: terms)
         guard let attributed = try? AttributedString(markdown: highlighted) else {
             return Text(text)
         }
@@ -890,3 +1125,93 @@ private struct CorrectionPickerView: View {
         .frame(width: 260)
     }
 }
+
+private struct TermExplainView: View {
+    let term: TermHighlight
+    let onSubmitCorrection: (String) -> Void
+    @State private var isEditingCorrection = false
+    @State private var correctionInput = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+                Text(badge).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            if let snippet {
+                Text("\"\(snippet)\"").font(.subheadline).foregroundStyle(.secondary).lineLimit(4)
+            }
+            if !aliases.isEmpty {
+                Text("Also heard as: \(aliases.joined(separator: ", "))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider().padding(.vertical, 2)
+
+            if isEditingCorrection {
+                Text("Correct spelling:").font(.caption).foregroundStyle(.secondary)
+                TextField("Type the correct word…", text: $correctionInput)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(submitCorrection)
+                HStack {
+                    Button("Cancel") { isEditingCorrection = false }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Save", action: submitCorrection)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(correctionInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            } else {
+                Button("Not correct? Fix it…") {
+                    correctionInput = ""
+                    isEditingCorrection = true
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+            }
+        }
+        .padding(16)
+        .frame(width: 280, alignment: .leading)
+    }
+
+    private func submitCorrection() {
+        let trimmed = correctionInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onSubmitCorrection(trimmed)
+        dismiss()
+    }
+
+    private var title: String {
+        switch term.kind {
+        case .glossary(let entry): return entry.term
+        case .participant(let participant): return participant.name
+        }
+    }
+
+    private var badge: String {
+        switch term.kind {
+        case .glossary(let entry): return entry.category == .project ? "Project term" : "Jargon"
+        case .participant: return "Participant"
+        }
+    }
+
+    private var snippet: String? {
+        switch term.kind {
+        case .glossary(let entry): return entry.snippet
+        case .participant(let participant): return participant.snippet
+        }
+    }
+
+    private var aliases: [String] {
+        switch term.kind {
+        case .glossary(let entry): return entry.aliases
+        case .participant(let participant): return participant.aliases
+        }
+    }
+}
+

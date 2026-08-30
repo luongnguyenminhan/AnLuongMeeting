@@ -201,7 +201,19 @@ func withRetry<T: Sendable>(
     }
 }
 
-func decomposePrompt(transcript: String) -> String {
+/// Appended to every note-generation prompt. The system instruction (built from confirmed
+/// memory) lists known terms/names together with ASR mishearings of them (e.g. "Celesnity
+/// (also heard as: Celesta)") — but without this explicit call-out, the model tends to
+/// reproduce the transcript's literal (mis-transcribed) spelling instead, since it reads
+/// "don't add info not in the transcript" as "don't touch the wording."  Applying a known
+/// spelling correction is not adding information, so say so directly.
+let spellingCorrectionInstruction = """
+
+
+QUAN TRỌNG — sửa lỗi chính tả đã biết: nếu phần hướng dẫn hệ thống liệt kê một thuật ngữ/tên riêng đã xác nhận kèm các biến thể "cũng nghe thành: ..." (ASR nghe nhầm), và bản chép lời bên dưới chứa biến thể đó, hãy viết theo đúng chính tả đã xác nhận thay vì chép lại biến thể nghe nhầm. Đây là sửa lỗi phiên âm đã biết, KHÔNG phải suy diễn hay thêm thông tin mới.
+"""
+
+func decomposePrompt(transcript: String, detailAddendum: String = "") -> String {
     """
     Bạn đang phân tích bản chép lời một cuộc họp để chuẩn bị viết ghi chú chi tiết theo từng chủ đề.
 
@@ -215,6 +227,8 @@ func decomposePrompt(transcript: String) -> String {
 
     Liệt kê các chủ đề theo đúng thứ tự chúng xuất hiện trong bản chép lời. Không bỏ sót chủ đề nào có nội dung thực chất, kể cả chủ đề ngắn.
 
+    QUAN TRỌNG — tránh chủ đề trùng lặp: nếu cuộc họp quay lại thảo luận cùng một nội dung cốt lõi nhiều lần dưới các góc độ khác nhau (ví dụ: một buổi phỏng vấn nhắc đi nhắc lại cùng một kỹ năng hoặc yêu cầu), hãy gộp các đoạn đó thành MỘT chủ đề duy nhất thay vì tách thành nhiều chủ đề riêng biệt — mỗi chủ đề phải đại diện cho một nội dung thực sự khác biệt, không chồng lấn với chủ đề khác.\(spellingCorrectionInstruction)\(detailAddendum)
+
     BẢN CHÉP LỜI:
     \(transcript)
     """
@@ -227,14 +241,15 @@ func explorePrompt(topic: NoteTopic, transcript: String, detailAddendum: String)
     CHỦ ĐỀ CẦN TẬP TRUNG: \(topic.title)
     Mô tả ngắn: \(topic.description)
 
-    Chỉ tập trung vào nội dung liên quan đến chủ đề này, bỏ qua các chủ đề khác. Viết bằng tiếng Việt, trình bày thành các gạch đầu dòng chi tiết, bao gồm:
+    Chỉ tập trung vào nội dung liên quan đến chủ đề này, bỏ qua các chủ đề khác. Mặc định viết bằng tiếng Việt (trừ khi yêu cầu bổ sung bên dưới chỉ định ngôn ngữ khác), trình bày thành các gạch đầu dòng chi tiết, bao gồm:
     - Các điểm chính và điểm phụ đã được thảo luận về chủ đề này.
     - Số liệu, thông số kỹ thuật, tên công cụ/thiết bị/giao thức được nhắc đến, giữ nguyên chính xác.
     - Trích dẫn nguyên văn các câu nói quan trọng khi phù hợp, ghi rõ người nói nếu xác định được.
-    - Quyết định hoặc việc cần làm liên quan đến chủ đề này, nếu có.
     - Các điểm chưa thống nhất hoặc câu hỏi còn bỏ ngỏ liên quan đến chủ đề này.
 
-    KHÔNG suy diễn hay thêm thông tin không có trong bản chép lời. Nếu bản chép lời không đủ chi tiết cho một mục nào đó, bỏ qua mục đó thay vì đoán.\(detailAddendum)
+    KHÔNG liệt kê quyết định hay việc cần làm ở đây — một bước riêng ở cuối sẽ tổng hợp quyết định và việc cần làm từ TOÀN BỘ các chủ đề, nên lặp lại chúng ở đây sẽ tạo nội dung trùng lặp trong ghi chú cuối cùng.
+
+    KHÔNG suy diễn hay thêm thông tin không có trong bản chép lời. Nếu bản chép lời không đủ chi tiết cho một mục nào đó, bỏ qua mục đó thay vì đoán. KHÔNG được thêm BẤT KỲ tiêu đề Markdown nào (#, ##, ###) ở bất kỳ đâu trong câu trả lời — kể cả tiêu đề tự đặt như "Overview", "Tóm tắt", "Quyết định" — dù bộ nhớ phong cách ghi chú bên dưới có gợi ý dùng tiêu đề cho CẢ ghi chú, điều đó KHÔNG áp dụng ở bước này. Chỉ trả về MỘT danh sách gạch đầu dòng phẳng, không heading, không mục con có tiêu đề riêng, vì tiêu đề chủ đề đã được thêm riêng vào ghi chú cuối cùng.\(spellingCorrectionInstruction)\(detailAddendum)
 
     BẢN CHÉP LỜI ĐẦY ĐỦ:
     \(transcript)
@@ -248,7 +263,11 @@ func expandPrompt(topic: NoteTopic, priorFindings: String, transcript: String, d
     BẢN TÌM HIỂU BAN ĐẦU (dùng làm điểm khởi đầu, không phải bản cuối):
     \(priorFindings)
 
-    Đọc lại bản chép lời đầy đủ bên dưới và viết một bản tìm hiểu MỚI, đầy đủ hơn về chủ đề này — giữ lại mọi điểm đã có ở bản ban đầu, đồng thời bổ sung thêm các điểm phụ, số liệu, trích dẫn, hoặc sắc thái mà bản ban đầu chưa nêu ra. Viết bằng tiếng Việt, gạch đầu dòng. Đây sẽ là bản DUY NHẤT được dùng cho chủ đề này trong ghi chú cuối cùng.\(detailAddendum)
+    Đọc lại bản chép lời đầy đủ bên dưới và viết một bản tìm hiểu MỚI, đầy đủ hơn về chủ đề này — giữ lại mọi điểm đã có ở bản ban đầu, đồng thời bổ sung thêm các điểm phụ, số liệu, trích dẫn, hoặc sắc thái mà bản ban đầu chưa nêu ra. Mặc định viết bằng tiếng Việt (trừ khi yêu cầu bổ sung bên dưới chỉ định ngôn ngữ khác), gạch đầu dòng.
+
+    KHÔNG liệt kê quyết định hay việc cần làm ở đây — một bước riêng ở cuối sẽ tổng hợp quyết định và việc cần làm từ TOÀN BỘ các chủ đề, nên lặp lại chúng ở đây sẽ tạo nội dung trùng lặp trong ghi chú cuối cùng.
+
+    KHÔNG được thêm BẤT KỲ tiêu đề Markdown nào (#, ##, ###) ở bất kỳ đâu trong câu trả lời — kể cả tiêu đề tự đặt như "Overview", "Tóm tắt", "Quyết định" — dù bộ nhớ phong cách ghi chú bên dưới có gợi ý dùng tiêu đề cho CẢ ghi chú, điều đó KHÔNG áp dụng ở bước này. Chỉ trả về MỘT danh sách gạch đầu dòng phẳng, không heading, không mục con có tiêu đề riêng. Đây sẽ là bản DUY NHẤT được dùng cho chủ đề này trong ghi chú cuối cùng.\(spellingCorrectionInstruction)\(detailAddendum)
 
     BẢN CHÉP LỜI ĐẦY ĐỦ:
     \(transcript)
@@ -261,7 +280,102 @@ private func topicFindingsBlock(_ findings: [(title: String, content: String)]) 
     }.joined(separator: "\n\n")
 }
 
-func synthesizePrompt(
+struct SynthesisActionItem: Sendable, Equatable {
+    let task: String
+    let owner: String?
+    let deadline: String?
+}
+
+/// Section-header words for the assembled note. Returned by the model (in whatever language
+/// was requested) rather than hardcoded, so a language override in the user's extra
+/// instructions applies to structural headers too, not just free-text content.
+struct SynthesisLabels: Sendable, Equatable {
+    let generalInfoHeading: String
+    let dateLabel: String
+    let topicLabel: String
+    let participantsLabel: String
+    let summaryHeading: String
+    let topicsHeading: String
+    let decisionsHeading: String
+    let actionItemsHeading: String
+    let ownerLabel: String
+    let deadlineLabel: String
+
+    static let defaultVietnamese = SynthesisLabels(
+        generalInfoHeading: "Thông tin chung",
+        dateLabel: "Ngày họp",
+        topicLabel: "Chủ đề",
+        participantsLabel: "Người tham gia",
+        summaryHeading: "Tóm tắt nội dung",
+        topicsHeading: "Các chủ đề được thảo luận",
+        decisionsHeading: "Quyết định quan trọng",
+        actionItemsHeading: "Công việc cần thực hiện",
+        ownerLabel: "Người phụ trách",
+        deadlineLabel: "Deadline"
+    )
+}
+
+struct SynthesisMetadata: Sendable, Equatable {
+    let meetingTitle: String
+    let topicSentence: String
+    let participants: [String]
+    let summary: String
+    let decisions: [String]
+    let actionItems: [SynthesisActionItem]
+    let labels: SynthesisLabels
+}
+
+func synthesizeMetadataSchema() -> [String: Any] {
+    let actionItemSchema: [String: Any] = [
+        "type": "OBJECT",
+        "properties": [
+            "task": ["type": "STRING"],
+            "owner": ["type": "STRING"],
+            "deadline": ["type": "STRING"]
+        ],
+        "required": ["task"]
+    ]
+    let labelsSchema: [String: Any] = [
+        "type": "OBJECT",
+        "properties": [
+            "generalInfoHeading": ["type": "STRING"],
+            "dateLabel": ["type": "STRING"],
+            "topicLabel": ["type": "STRING"],
+            "participantsLabel": ["type": "STRING"],
+            "summaryHeading": ["type": "STRING"],
+            "topicsHeading": ["type": "STRING"],
+            "decisionsHeading": ["type": "STRING"],
+            "actionItemsHeading": ["type": "STRING"],
+            "ownerLabel": ["type": "STRING"],
+            "deadlineLabel": ["type": "STRING"]
+        ],
+        "required": [
+            "generalInfoHeading", "dateLabel", "topicLabel", "participantsLabel",
+            "summaryHeading", "topicsHeading", "decisionsHeading", "actionItemsHeading",
+            "ownerLabel", "deadlineLabel"
+        ]
+    ]
+    return [
+        "type": "OBJECT",
+        "properties": [
+            "meetingTitle": ["type": "STRING"],
+            "topicSentence": ["type": "STRING"],
+            "participants": ["type": "ARRAY", "items": ["type": "STRING"]],
+            "summary": ["type": "STRING"],
+            "decisions": ["type": "ARRAY", "items": ["type": "STRING"]],
+            "actionItems": ["type": "ARRAY", "items": actionItemSchema],
+            "labels": labelsSchema
+        ],
+        "required": ["meetingTitle", "topicSentence", "participants", "summary", "decisions", "actionItems", "labels"]
+    ]
+}
+
+/// Asks only for the header/summary/decisions/action-items metadata — never for a
+/// reproduction of the topic write-ups themselves, which are pasted in verbatim by
+/// `assembleFinalNote` instead of being re-generated (an LLM asked to losslessly copy
+/// tens of thousands of characters reliably summarizes instead, however strongly worded
+/// the instruction not to).
+func synthesizeMetadataPrompt(
     today: String,
     meetingTitleGuess: String?,
     participantsGuess: [String],
@@ -272,40 +386,138 @@ func synthesizePrompt(
     let participantsLine = participantsGuess.isEmpty ? "(không xác định được)" : participantsGuess.joined(separator: ", ")
 
     return """
-    Bạn đang tổng hợp ghi chú cuộc họp cuối cùng bằng tiếng Việt, dựa trên các bản tìm hiểu chi tiết theo từng chủ đề bên dưới (đã được trích xuất sẵn từ bản chép lời gốc).
+    Bạn đang chuẩn bị phần mở đầu và kết luận cho một ghi chú cuộc họp, dựa trên các bản tìm hiểu chi tiết theo từng chủ đề bên dưới. Các bản tìm hiểu này sẽ được đưa NGUYÊN VĂN vào ghi chú cuối cùng — bạn KHÔNG cần và KHÔNG được viết lại hay tóm tắt chúng.
 
     Tên cuộc họp gợi ý: \(titleLine)
     Người tham gia gợi ý: \(participantsLine)
     Người dùng xác nhận ngày họp là hôm nay: \(today).
 
-    Hãy tổ chức lại nội dung từ các bản tìm hiểu theo từng chủ đề bên dưới thành MỘT ghi chú cuộc họp mạch lạc, đầy đủ. KHÔNG bỏ sót thông tin đã có trong các bản tìm hiểu — nhiệm vụ của bạn là tổ chức và trình bày lại, không phải tóm tắt thêm. Rút ra các quyết định và việc cần làm được đề cập trong bất kỳ bản tìm hiểu nào vào đúng mục tương ứng. Không coi nhãn SPEAKER_<number> là tên thật của một người.\(detailAddendum)
+    Dựa trên nội dung các bản tìm hiểu, hãy cung cấp:
+    - meetingTitle: tên cuộc họp phù hợp.
+    - topicSentence: một câu mô tả chủ đề chính của cuộc họp.
+    - participants: danh sách người tham gia (dùng danh sách gợi ý nếu hợp lý, bổ sung nếu bản tìm hiểu nêu rõ thêm).
+    - summary: đoạn tóm tắt 3-5 câu về nội dung chính của cuộc họp.
+    - decisions: danh sách các quyết định quan trọng được đề cập trong bất kỳ bản tìm hiểu nào (mảng rỗng nếu không có).
+    - actionItems: danh sách công việc cần thực hiện được đề cập (mỗi mục gồm task, và owner/deadline nếu có nêu; mảng rỗng nếu không có).
+    - labels: các nhãn tiêu đề dùng cho ghi chú cuối cùng — generalInfoHeading, dateLabel, topicLabel, participantsLabel, summaryHeading, topicsHeading, decisionsHeading, actionItemsHeading, ownerLabel, deadlineLabel. Mặc định bằng tiếng Việt (ví dụ "Thông tin chung", "Ngày họp", "Chủ đề", "Người tham gia", "Tóm tắt nội dung", "Các chủ đề được thảo luận", "Quyết định quan trọng", "Công việc cần thực hiện", "Người phụ trách", "Deadline"), TRỪ KHI yêu cầu bổ sung bên dưới chỉ định một ngôn ngữ khác — khi đó hãy dịch các nhãn này VÀ mọi trường text ở trên sang đúng ngôn ngữ được yêu cầu.
 
-    ĐỊNH DẠNG BẮT BUỘC:
-    # [TÊN CUỘC HỌP]
-    ## Thông tin chung
-    - **Ngày họp**: \(today)
-    - **Chủ đề**: [chủ đề chính của cuộc họp]
-    - **Người tham gia**: [danh sách người tham gia nếu có thể xác định]
-
-    ## Tóm tắt nội dung
-    [Tóm tắt ngắn gọn 3-5 câu về nội dung chính của cuộc họp]
-
-    ## Các chủ đề được thảo luận
-    [Trình bày lại từng chủ đề bên dưới thành các mục có đánh số, giữ nguyên chi tiết, trích dẫn và số liệu đã có]
-
-    ## Quyết định quan trọng
-    - [Quyết định 1]
-    - [Quyết định 2]
-
-    ## Công việc cần thực hiện
-    - [Công việc 1] - Người phụ trách: [Tên], Deadline: [Thời hạn nếu có]
-    - [Công việc 2] - Người phụ trách: [Tên], Deadline: [Thời hạn nếu có]
-
-    Chỉ trả về nội dung ghi chú theo đúng định dạng trên. Không thêm lời giải thích trước hoặc sau ghi chú.
+    Không suy diễn thông tin không có trong các bản tìm hiểu. Không coi nhãn SPEAKER_<number> là tên thật của một người.\(spellingCorrectionInstruction)\(detailAddendum)
 
     CÁC BẢN TÌM HIỂU THEO CHỦ ĐỀ:
     \(topicFindingsBlock(topicFindings))
     """
+}
+
+func parseSynthesisMetadata(from json: Data) -> SynthesisMetadata? {
+    struct RawActionItem: Decodable {
+        let task: String?
+        let owner: String?
+        let deadline: String?
+    }
+    struct RawLabels: Decodable {
+        let generalInfoHeading: String?
+        let dateLabel: String?
+        let topicLabel: String?
+        let participantsLabel: String?
+        let summaryHeading: String?
+        let topicsHeading: String?
+        let decisionsHeading: String?
+        let actionItemsHeading: String?
+        let ownerLabel: String?
+        let deadlineLabel: String?
+    }
+    struct RawMetadata: Decodable {
+        let meetingTitle: String?
+        let topicSentence: String?
+        let participants: [String]?
+        let summary: String?
+        let decisions: [String]?
+        let actionItems: [RawActionItem]?
+        let labels: RawLabels?
+    }
+    guard let raw = try? JSONDecoder().decode(RawMetadata.self, from: json),
+          let title = raw.meetingTitle, !title.isEmpty else { return nil }
+
+    let actionItems: [SynthesisActionItem] = (raw.actionItems ?? []).compactMap { item in
+        guard let task = item.task, !task.isEmpty else { return nil }
+        return SynthesisActionItem(task: task, owner: item.owner, deadline: item.deadline)
+    }
+    let defaults = SynthesisLabels.defaultVietnamese
+    let rawLabels = raw.labels
+    let labels = SynthesisLabels(
+        generalInfoHeading: rawLabels?.generalInfoHeading ?? defaults.generalInfoHeading,
+        dateLabel: rawLabels?.dateLabel ?? defaults.dateLabel,
+        topicLabel: rawLabels?.topicLabel ?? defaults.topicLabel,
+        participantsLabel: rawLabels?.participantsLabel ?? defaults.participantsLabel,
+        summaryHeading: rawLabels?.summaryHeading ?? defaults.summaryHeading,
+        topicsHeading: rawLabels?.topicsHeading ?? defaults.topicsHeading,
+        decisionsHeading: rawLabels?.decisionsHeading ?? defaults.decisionsHeading,
+        actionItemsHeading: rawLabels?.actionItemsHeading ?? defaults.actionItemsHeading,
+        ownerLabel: rawLabels?.ownerLabel ?? defaults.ownerLabel,
+        deadlineLabel: rawLabels?.deadlineLabel ?? defaults.deadlineLabel
+    )
+
+    return SynthesisMetadata(
+        meetingTitle: title,
+        topicSentence: raw.topicSentence ?? "",
+        participants: raw.participants ?? [],
+        summary: raw.summary ?? "",
+        decisions: raw.decisions ?? [],
+        actionItems: actionItems,
+        labels: labels
+    )
+}
+
+/// Deterministically assembles the final note: header/summary/decisions/action-items come
+/// from `metadata`, but every topic's body is pasted in exactly as explore/expand wrote it —
+/// never re-generated, so it can never be compressed away.
+func assembleFinalNote(
+    today: String,
+    metadata: SynthesisMetadata,
+    topicFindings: [(title: String, content: String)]
+) -> String {
+    var lines: [String] = []
+    lines.append("# \(metadata.meetingTitle)")
+    lines.append("")
+    lines.append("## \(metadata.labels.generalInfoHeading)")
+    lines.append("- **\(metadata.labels.dateLabel)**: \(today)")
+    lines.append("- **\(metadata.labels.topicLabel)**: \(metadata.topicSentence)")
+    let participantsText = metadata.participants.isEmpty ? "—" : metadata.participants.joined(separator: ", ")
+    lines.append("- **\(metadata.labels.participantsLabel)**: \(participantsText)")
+    lines.append("")
+    lines.append("## \(metadata.labels.summaryHeading)")
+    lines.append(metadata.summary)
+    lines.append("")
+    lines.append("## \(metadata.labels.topicsHeading)")
+    for (index, item) in topicFindings.enumerated() {
+        lines.append("")
+        lines.append("### \(index + 1). \(item.title)")
+        lines.append(item.content)
+    }
+    lines.append("")
+    lines.append("## \(metadata.labels.decisionsHeading)")
+    if metadata.decisions.isEmpty {
+        lines.append("- —")
+    } else {
+        for decision in metadata.decisions { lines.append("- \(decision)") }
+    }
+    lines.append("")
+    lines.append("## \(metadata.labels.actionItemsHeading)")
+    if metadata.actionItems.isEmpty {
+        lines.append("- —")
+    } else {
+        for item in metadata.actionItems {
+            var line = "- \(item.task)"
+            if let owner = item.owner, !owner.isEmpty {
+                line += " — \(metadata.labels.ownerLabel): \(owner)"
+            }
+            if let deadline = item.deadline, !deadline.isEmpty {
+                line += ", \(metadata.labels.deadlineLabel): \(deadline)"
+            }
+            lines.append(line)
+        }
+    }
+    return lines.joined(separator: "\n") + "\n"
 }
 
 extension GeminiTranscriptionService {
@@ -318,62 +530,105 @@ extension GeminiTranscriptionService {
         apiKey: String,
         memoryContext: String?,
         meetingDate: String,
-        progress: @escaping @Sendable (TranscriptionProgress) -> Void
+        progress: @escaping @Sendable (TranscriptionProgress) -> Void,
+        trace: @escaping LLMTraceFunc = noopTrace
     ) async throws -> String {
         let preferences = NoteDetailPreferences.loadSaved()
         let detailAddendum = preferences.promptAddendum
+        Log.write("[note-tree] start — transcript=\(transcript.count) chars, level=\(preferences.level), addendum=\(detailAddendum.isEmpty ? "(empty)" : detailAddendum.replacingOccurrences(of: "\n", with: " "))")
 
-        func fallbackToSingleCall() async throws -> String {
-            try await generateText(
-                parts: [["text": Self.meetingNotePrompt(today: meetingDate, detailAddendum: detailAddendum) + "\n" + transcript]],
-                systemInstruction: memoryContext,
-                apiKey: apiKey
-            )
-        }
-
-        guard
-            let decomposeJSON = try? await withRetry(operation: {
-                try await self.generateStructuredJSON(
-                    prompt: decomposePrompt(transcript: transcript),
-                    schema: decomposeSchema(),
-                    apiKey: apiKey
-                )
-            }),
-            let decomposition = parseDecomposition(from: decomposeJSON)
-        else {
-            return try await fallbackToSingleCall()
-        }
-
-        let survivingTopics = selectTopicsForExploration(decomposition.topics, level: preferences.level)
-        guard !survivingTopics.isEmpty else {
-            return try await fallbackToSingleCall()
+        func fallbackToSingleCall(reason: String) async throws -> String {
+            Log.write("[note-tree] FALLBACK — \(reason)")
+            progress(TranscriptionProgress(
+                stage: .meetingNote,
+                currentSegment: 0,
+                totalSegments: 0,
+                message: "\(reason) — falling back to a single-call note."
+            ))
+            let prompt = Self.meetingNotePrompt(today: meetingDate, detailAddendum: detailAddendum) + "\n" + transcript
+            Log.write("[note-tree] fallback prompt (non-transcript portion): \(Self.meetingNotePrompt(today: meetingDate, detailAddendum: detailAddendum))")
+            let result = try await generateText(parts: [["text": prompt]], systemInstruction: memoryContext, apiKey: apiKey)
+            Log.write("[note-tree] fallback response (\(result.count) chars): \(result)")
+            await trace("fallback", prompt, result, true)
+            return result
         }
 
         progress(TranscriptionProgress(
             stage: .meetingNote,
             currentSegment: 0,
-            totalSegments: survivingTopics.count
+            totalSegments: 0,
+            message: "Decomposing the transcript into topics…"
+        ))
+
+        Log.write("[note-tree] decompose prompt template (transcript appended after): \(decomposePrompt(transcript: "<TRANSCRIPT>", detailAddendum: detailAddendum))")
+        var decomposeAttemptError: String?
+        let decomposeJSON = try? await withRetry(operation: {
+            do {
+                return try await self.generateStructuredJSON(
+                    prompt: decomposePrompt(transcript: transcript, detailAddendum: detailAddendum),
+                    schema: decomposeSchema(),
+                    systemInstruction: memoryContext,
+                    apiKey: apiKey
+                )
+            } catch {
+                decomposeAttemptError = "\(error)"
+                throw error
+            }
+        })
+        let decomposePromptText = decomposePrompt(transcript: transcript, detailAddendum: detailAddendum)
+        if let decomposeJSON, let raw = String(data: decomposeJSON, encoding: .utf8) {
+            Log.write("[note-tree] decompose raw response: \(raw)")
+            await trace("decompose", decomposePromptText, raw, true)
+        } else {
+            Log.write("[note-tree] decompose call FAILED — \(decomposeAttemptError ?? "unknown error")")
+            await trace("decompose", decomposePromptText, decomposeAttemptError ?? "unknown error", false)
+        }
+        guard
+            let decomposeJSON,
+            let decomposition = parseDecomposition(from: decomposeJSON)
+        else {
+            return try await fallbackToSingleCall(reason: "Could not decompose the transcript")
+        }
+        Log.write("[note-tree] parsed \(decomposition.topics.count) topics: \(decomposition.topics.map { "\($0.title) (richness=\($0.richness))" }.joined(separator: ", "))")
+
+        let survivingTopics = selectTopicsForExploration(decomposition.topics, level: preferences.level)
+        Log.write("[note-tree] \(survivingTopics.count) topics survive pruning for level \(preferences.level): \(survivingTopics.map(\.title).joined(separator: ", "))")
+        guard !survivingTopics.isEmpty else {
+            return try await fallbackToSingleCall(reason: "No topics were substantial enough to explore")
+        }
+
+        progress(TranscriptionProgress(
+            stage: .meetingNote,
+            currentSegment: 0,
+            totalSegments: survivingTopics.count,
+            message: "Exploring \(survivingTopics.count) topic\(survivingTopics.count == 1 ? "" : "s")…"
         ))
 
         let exploreCounter = ProgressCounter()
         let exploreResults: [String?] = await runBounded(survivingTopics, maxConcurrent: 3) { topic in
+            let exploreP = explorePrompt(topic: topic, transcript: transcript, detailAddendum: detailAddendum)
             let text: String?
             do {
                 text = try await withRetry {
                     try await self.generateText(
-                        parts: [["text": explorePrompt(topic: topic, transcript: transcript, detailAddendum: detailAddendum)]],
+                        parts: [["text": exploreP]],
                         systemInstruction: memoryContext,
                         apiKey: apiKey
                     )
                 }
+                Log.write("[note-tree] explore[\(topic.title)] response (\(text?.count ?? 0) chars): \(text ?? "")")
+                await trace("explore[\(topic.title)]", exploreP, text ?? "", true)
             } catch {
                 text = nil
+                Log.write("[note-tree] explore[\(topic.title)] FAILED — \(error)")
+                await trace("explore[\(topic.title)]", exploreP, "\(error)", false)
             }
             let completed = await exploreCounter.increment()
             progress(TranscriptionProgress(
                 stage: .meetingNote,
                 currentSegment: completed,
-                totalSegments: survivingTopics.count
+                totalSegments: survivingTopics.count,
+                message: "Explored topic \(completed) of \(survivingTopics.count): \(topic.title)"
             ))
             return text
         }
@@ -383,7 +638,7 @@ extension GeminiTranscriptionService {
             return (topic.title, text)
         }
         guard !findings.isEmpty else {
-            return try await fallbackToSingleCall()
+            return try await fallbackToSingleCall(reason: "Every topic exploration failed")
         }
 
         let expansionCandidates = selectTopicsForExpansion(from: survivingTopics, level: preferences.level)
@@ -391,20 +646,26 @@ extension GeminiTranscriptionService {
             progress(TranscriptionProgress(
                 stage: .meetingNote,
                 currentSegment: survivingTopics.count,
-                totalSegments: survivingTopics.count
+                totalSegments: survivingTopics.count,
+                message: "Deepening \(expansionCandidates.count) topic\(expansionCandidates.count == 1 ? "" : "s")…"
             ))
             let expandResults: [(String, String)?] = await runBounded(expansionCandidates, maxConcurrent: 3) { topic in
                 guard let prior = findings.first(where: { $0.title == topic.title })?.content else { return nil }
+                let expandP = expandPrompt(topic: topic, priorFindings: prior, transcript: transcript, detailAddendum: detailAddendum)
                 do {
                     let deeper = try await withRetry {
                         try await self.generateText(
-                            parts: [["text": expandPrompt(topic: topic, priorFindings: prior, transcript: transcript, detailAddendum: detailAddendum)]],
+                            parts: [["text": expandP]],
                             systemInstruction: memoryContext,
                             apiKey: apiKey
                         )
                     }
+                    Log.write("[note-tree] expand[\(topic.title)] response (\(deeper.count) chars): \(deeper)")
+                    await trace("expand[\(topic.title)]", expandP, deeper, true)
                     return (topic.title, deeper)
                 } catch {
+                    Log.write("[note-tree] expand[\(topic.title)] FAILED — \(error)")
+                    await trace("expand[\(topic.title)]", expandP, "\(error)", false)
                     return nil
                 }
             }
@@ -418,21 +679,43 @@ extension GeminiTranscriptionService {
         progress(TranscriptionProgress(
             stage: .meetingNote,
             currentSegment: survivingTopics.count,
-            totalSegments: survivingTopics.count
+            totalSegments: survivingTopics.count,
+            message: "Writing the summary and action items…"
         ))
 
-        return try await withRetry {
-            try await self.generateText(
-                parts: [["text": synthesizePrompt(
-                    today: meetingDate,
-                    meetingTitleGuess: decomposition.meetingTitleGuess,
-                    participantsGuess: decomposition.participantsGuess,
-                    topicFindings: findings,
-                    detailAddendum: detailAddendum
-                )]],
-                systemInstruction: memoryContext,
-                apiKey: apiKey
+        let metadataPrompt = synthesizeMetadataPrompt(
+            today: meetingDate,
+            meetingTitleGuess: decomposition.meetingTitleGuess,
+            participantsGuess: decomposition.participantsGuess,
+            topicFindings: findings,
+            detailAddendum: detailAddendum
+        )
+        Log.write("[note-tree] synthesize-metadata prompt (\(metadataPrompt.count) chars): \(metadataPrompt)")
+        let metadataJSON = try? await withRetry(operation: {
+            try await self.generateStructuredJSON(prompt: metadataPrompt, schema: synthesizeMetadataSchema(), systemInstruction: memoryContext, apiKey: apiKey)
+        })
+        if let metadataJSON, let raw = String(data: metadataJSON, encoding: .utf8) {
+            Log.write("[note-tree] synthesize-metadata raw response: \(raw)")
+            await trace("synthesize-metadata", metadataPrompt, raw, true)
+        }
+        let metadata: SynthesisMetadata
+        if let metadataJSON, let parsed = parseSynthesisMetadata(from: metadataJSON) {
+            metadata = parsed
+        } else {
+            Log.write("[note-tree] synthesize-metadata FAILED — assembling with default header labels")
+            await trace("synthesize-metadata", metadataPrompt, "parse failed or call failed", false)
+            metadata = SynthesisMetadata(
+                meetingTitle: (decomposition.meetingTitleGuess?.isEmpty == false) ? decomposition.meetingTitleGuess! : "Meeting Note",
+                topicSentence: "",
+                participants: decomposition.participantsGuess,
+                summary: "",
+                decisions: [],
+                actionItems: [],
+                labels: .defaultVietnamese
             )
         }
+        let result = assembleFinalNote(today: meetingDate, metadata: metadata, topicFindings: findings)
+        Log.write("[note-tree] final assembled note (\(result.count) chars)")
+        return result
     }
 }

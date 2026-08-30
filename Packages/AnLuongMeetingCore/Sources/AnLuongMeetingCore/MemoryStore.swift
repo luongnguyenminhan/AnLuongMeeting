@@ -285,6 +285,19 @@ public extension MemoryData {
         return lines.joined(separator: "\n")
     }
 
+    /// Every confirmed glossary/participant alias paired with its canonical spelling —
+    /// the raw material for `applyGlossaryCorrections`, which deterministically fixes known
+    /// ASR mishearings in a transcript without relying on an LLM to notice and apply them.
+    public func glossaryCorrectionPairs() -> [(alias: String, canonical: String)] {
+        let glossaryPairs = glossary.filter(\.confirmed).flatMap { entry in
+            entry.aliases.map { (alias: $0, canonical: entry.term) }
+        }
+        let participantPairs = participants.filter(\.confirmed).flatMap { participant in
+            participant.aliases.map { (alias: $0, canonical: participant.name) }
+        }
+        return glossaryPairs + participantPairs
+    }
+
     private func glossaryLine(_ entry: GlossaryEntry) -> String {
         entry.aliases.isEmpty ? entry.term : "\(entry.term) (also heard as: \(entry.aliases.joined(separator: ", ")))"
     }

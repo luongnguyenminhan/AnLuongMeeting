@@ -285,6 +285,19 @@ extension MemoryData {
         return lines.joined(separator: "\n")
     }
 
+    /// Every confirmed glossary/participant alias paired with its canonical spelling —
+    /// the raw material for `applyGlossaryCorrections`, which deterministically fixes known
+    /// ASR mishearings in a transcript without relying on an LLM to notice and apply them.
+    func glossaryCorrectionPairs() -> [(alias: String, canonical: String)] {
+        let glossaryPairs = glossary.filter(\.confirmed).flatMap { entry in
+            entry.aliases.map { (alias: $0, canonical: entry.term) }
+        }
+        let participantPairs = participants.filter(\.confirmed).flatMap { participant in
+            participant.aliases.map { (alias: $0, canonical: participant.name) }
+        }
+        return glossaryPairs + participantPairs
+    }
+
     private func glossaryLine(_ entry: GlossaryEntry) -> String {
         entry.aliases.isEmpty ? entry.term : "\(entry.term) (also heard as: \(entry.aliases.joined(separator: ", ")))"
     }
@@ -304,6 +317,19 @@ extension MemoryData {
         glossary.remove(at: index)
     }
 
+    /// Instead of discarding a rejected suggestion as noise, records it as a known
+    /// mishearing of an existing confirmed term — so `renderForPrompt` starts telling
+    /// Gemini "also heard as: ..." for it going forward.
+    mutating func mergeGlossaryAsAlias(id: String, intoTermID targetID: String) {
+        guard let index = glossary.firstIndex(where: { $0.id == id }),
+              let targetIndex = glossary.firstIndex(where: { $0.id == targetID }) else { return }
+        let rejectedTerm = glossary[index].term
+        if !glossary[targetIndex].aliases.contains(rejectedTerm) {
+            glossary[targetIndex].aliases.append(rejectedTerm)
+        }
+        glossary.remove(at: index)
+    }
+
     mutating func acceptParticipant(id: String) {
         guard let index = participants.firstIndex(where: { $0.id == id }) else { return }
         participants[index].confirmed = true
@@ -312,6 +338,17 @@ extension MemoryData {
     mutating func rejectParticipant(id: String) {
         guard let index = participants.firstIndex(where: { $0.id == id }) else { return }
         ignoredTerms.insert(participants[index].name)
+        participants.remove(at: index)
+    }
+
+    /// See `mergeGlossaryAsAlias` — same idea for a mis-transcribed participant name.
+    mutating func mergeParticipantAsAlias(id: String, intoParticipantID targetID: String) {
+        guard let index = participants.firstIndex(where: { $0.id == id }),
+              let targetIndex = participants.firstIndex(where: { $0.id == targetID }) else { return }
+        let rejectedName = participants[index].name
+        if !participants[targetIndex].aliases.contains(rejectedName) {
+            participants[targetIndex].aliases.append(rejectedName)
+        }
         participants.remove(at: index)
     }
 
