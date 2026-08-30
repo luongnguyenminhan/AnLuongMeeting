@@ -202,3 +202,44 @@ enum AnLuongMotion {
     static let standard = Animation.spring(response: 0.34, dampingFraction: 0.82)
     static let gentle = Animation.easeOut(duration: 0.24)
 }
+
+/// A capsule switch matching the app's clay accent, used in place of the system
+/// `Toggle` wherever a setting sits in the app's own editorial surfaces rather
+/// than a stock `Form`.
+struct AnLuongToggleStyle: ToggleStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : AnLuongMotion.standard) {
+                configuration.isOn.toggle()
+            }
+        } label: {
+            HStack {
+                configuration.label
+                Spacer(minLength: 12)
+                track(isOn: configuration.isOn)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func track(isOn: Bool) -> some View {
+        Capsule()
+            .fill(isOn ? AnLuongPalette.clay : trackOff)
+            .frame(width: 42, height: 25)
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle()
+                    .fill(AnLuongTheme.canvas(for: colorScheme))
+                    .frame(width: 21, height: 21)
+                    .shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
+                    .padding(2)
+            }
+    }
+
+    private var trackOff: Color {
+        colorScheme == .dark ? Color.white.opacity(0.14) : AnLuongPalette.graphite.opacity(0.14)
+    }
+}
