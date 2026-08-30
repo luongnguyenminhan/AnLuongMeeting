@@ -46,6 +46,15 @@ final class MeetingLibraryModelTests: XCTestCase {
         XCTAssertEqual(records.first { $0.displayName == "product-sync" }?.status, .processing)
     }
 
+    func testScanPopulatesCorrectionsURLOnlyWhenSidecarExists() throws {
+        try Data("[]".utf8).write(to: fixtureDirectory.appendingPathComponent("product-sync.note-corrections.json"))
+
+        let records = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
+
+        XCTAssertNotNil(records.first(where: { $0.displayName == "product-sync" })?.correctionsURL)
+        XCTAssertNil(records.first(where: { $0.displayName == "partial" })?.correctionsURL)
+    }
+
     func testSearchAndFilterAreCaseInsensitiveAndStatusAware() throws {
         let records = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
 

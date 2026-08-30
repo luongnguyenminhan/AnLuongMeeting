@@ -31,6 +31,7 @@ final class IOSLibraryViewModel: ObservableObject {
 struct LibraryView: View {
     @ObservedObject var pending: IOSPendingWorkCoordinator
     @StateObject private var model = IOSLibraryViewModel()
+    @State private var pendingMemoryCount = 0
 
     private var hasSearchOrFilter: Bool {
         !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.filter != .all
@@ -56,6 +57,11 @@ struct LibraryView: View {
                 }
                 ZStack {
                     List {
+                        NavigationLink {
+                            GlossaryView(pending: pending)
+                        } label: {
+                            GlossaryRow(pendingCount: pendingMemoryCount)
+                        }
                         ForEach(model.records) { record in
                             NavigationLink(value: record.id) {
                                 MeetingRow(record: record)
@@ -97,6 +103,7 @@ struct LibraryView: View {
 
     private func reload() {
         model.reload(processingURL: pending.activeRecordingURL)
+        pendingMemoryCount = MemoryStore(directory: IOSMeetingStorage().recordingsDirectory).load().pendingCount
     }
 
     private var libraryHeader: some View {
@@ -120,6 +127,30 @@ struct LibraryView: View {
             }
         } label: { Image(systemName: "line.3.horizontal.decrease.circle") }
             .accessibilityLabel("Filter meetings")
+    }
+}
+
+private struct GlossaryRow: View {
+    let pendingCount: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "text.book.closed")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+            Text("Glossary")
+                .font(.headline)
+            Spacer()
+            if pendingCount > 0 {
+                Text("\(pendingCount)")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.14), in: Capsule())
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 

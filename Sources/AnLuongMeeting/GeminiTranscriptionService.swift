@@ -137,6 +137,7 @@ actor GeminiTranscriptionService {
     func transcribe(
         recordingURL: URL,
         apiKey: String,
+        memoryContext: String? = nil,
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> TranscriptionResult {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -183,6 +184,7 @@ actor GeminiTranscriptionService {
             let transcript = try await transcribeSegment(
                 segmentURL: segmentURL,
                 apiKey: key,
+                memoryContext: memoryContext,
                 segmentNumber: index + 1
             )
             transcripts.append(transcript)
@@ -203,6 +205,7 @@ actor GeminiTranscriptionService {
             meetingNote = try await generateMeetingNote(
                 transcript: mergedTranscript,
                 apiKey: key,
+                memoryContext: memoryContext,
                 meetingDate: Self.todayString()
             )
         } catch {
@@ -229,6 +232,7 @@ actor GeminiTranscriptionService {
     func transcribeOnly(
         recordingURL: URL,
         apiKey: String,
+        memoryContext: String? = nil,
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> URL {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -275,6 +279,7 @@ actor GeminiTranscriptionService {
             let transcript = try await transcribeSegment(
                 segmentURL: segmentURL,
                 apiKey: key,
+                memoryContext: memoryContext,
                 segmentNumber: index + 1
             )
             transcripts.append(transcript)
@@ -290,7 +295,8 @@ actor GeminiTranscriptionService {
     func regenerateNote(
         transcriptURL: URL,
         recordingURL: URL,
-        apiKey: String
+        apiKey: String,
+        memoryContext: String? = nil
     ) async throws -> URL {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
@@ -303,6 +309,7 @@ actor GeminiTranscriptionService {
         let meetingNote = try await generateMeetingNote(
             transcript: transcript,
             apiKey: key,
+            memoryContext: memoryContext,
             meetingDate: Self.todayString()
         )
 
@@ -317,6 +324,7 @@ actor GeminiTranscriptionService {
     private func transcribeSegment(
         segmentURL: URL,
         apiKey: String,
+        memoryContext: String?,
         segmentNumber: Int
     ) async throws -> String {
         let remoteFile = try await uploadAndWait(fileURL: segmentURL, apiKey: apiKey)
@@ -324,6 +332,7 @@ actor GeminiTranscriptionService {
         do {
             let transcript = try await generateTranscript(
                 remoteFile: remoteFile,
+                memoryContext: memoryContext,
                 apiKey: apiKey
             )
             let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -396,6 +405,7 @@ actor GeminiTranscriptionService {
 
     private func generateTranscript(
         remoteFile: RemoteFile,
+        memoryContext: String?,
         apiKey: String
     ) async throws -> String {
         let activeFile = try await waitForActiveFile(remoteFile, apiKey: apiKey)
@@ -407,6 +417,7 @@ actor GeminiTranscriptionService {
                     "file_uri": activeFile.uri
                 ]]
             ],
+            systemInstruction: memoryContext,
             apiKey: apiKey
         )
     }
@@ -414,14 +425,203 @@ actor GeminiTranscriptionService {
     private func generateMeetingNote(
         transcript: String,
         apiKey: String,
+        memoryContext: String?,
         meetingDate: String
     ) async throws -> String {
         return try await generateText(
             parts: [[
                 "text": Self.meetingNotePrompt(today: meetingDate) + "\n" + transcript
             ]],
+            systemInstruction: memoryContext,
             apiKey: apiKey
         )
+    }
+
+    func suggestMemoryUpdates(
+        transcript: String,
+        note: String,
+        currentMemory: String,
+        apiKey: String
+    ) async throws -> MemoryDraft {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
+        let json = try await generateStructuredJSON(
+            prompt: Self.memorySuggestionPrompt(transcript: transcript, note: note, currentMemory: currentMemory),
+            schema: Self.memorySuggestionSchema(),
+            apiKey: key
+        )
+        return Self.parseMemoryDraft(from: json)
+    }
+
+    private func generateStructuredJSON(prompt: String, schema: [String: Any], apiKey: String) async throws -> Data {
+        let url = apiURL(path: "v1beta/models/\(Self.model):generateContent", apiKey: apiKey)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "contents": [["parts": [["text": prompt]]]],
+            "generationConfig": [
+                "responseMimeType": "application/json",
+                "responseSchema": schema
+            ]
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response, data: data)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = root["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let responseParts = content["parts"] as? [[String: Any]],
+              let text = responseParts.compactMap({ $0["text"] as? String }).first,
+              let textData = text.data(using: .utf8) else {
+            throw GeminiTranscriptionError.invalidResponse("Gemini returned no structured JSON.")
+        }
+        return textData
+    }
+
+    private static func memorySuggestionSchema() -> [String: Any] {
+        let glossaryItem: [String: Any] = [
+            "type": "OBJECT",
+            "properties": [
+                "term": ["type": "STRING"],
+                "category": ["type": "STRING", "enum": ["project", "jargon"]],
+                "confidence": ["type": "NUMBER"],
+                "snippet": ["type": "STRING"]
+            ],
+            "required": ["term", "category", "confidence", "snippet"]
+        ]
+        let participantItem: [String: Any] = [
+            "type": "OBJECT",
+            "properties": [
+                "name": ["type": "STRING"],
+                "confidence": ["type": "NUMBER"],
+                "snippet": ["type": "STRING"]
+            ],
+            "required": ["name", "confidence", "snippet"]
+        ]
+        let styleItem: [String: Any] = [
+            "type": "OBJECT",
+            "properties": [
+                "note": ["type": "STRING"],
+                "confidence": ["type": "NUMBER"],
+                "snippet": ["type": "STRING"]
+            ],
+            "required": ["note", "confidence", "snippet"]
+        ]
+        let correctionItem: [String: Any] = [
+            "type": "OBJECT",
+            "properties": [
+                "wrongText": ["type": "STRING"],
+                "correctText": ["type": "STRING"],
+                "alternatives": ["type": "ARRAY", "items": ["type": "STRING"]],
+                "kind": ["type": "STRING", "enum": ["glossaryTerm", "participantName"]],
+                "confidence": ["type": "NUMBER"],
+                "snippet": ["type": "STRING"]
+            ],
+            "required": ["wrongText", "correctText", "kind", "confidence", "snippet"]
+        ]
+        let identityMergeItem: [String: Any] = [
+            "type": "OBJECT",
+            "properties": [
+                "names": ["type": "ARRAY", "items": ["type": "STRING"]],
+                "canonicalName": ["type": "STRING"],
+                "confidence": ["type": "NUMBER"],
+                "snippet": ["type": "STRING"]
+            ],
+            "required": ["names", "confidence", "snippet"]
+        ]
+        return [
+            "type": "OBJECT",
+            "properties": [
+                "glossary": ["type": "ARRAY", "items": glossaryItem],
+                "participants": ["type": "ARRAY", "items": participantItem],
+                "stylePreferences": ["type": "ARRAY", "items": styleItem],
+                "corrections": ["type": "ARRAY", "items": correctionItem],
+                "identityMerges": ["type": "ARRAY", "items": identityMergeItem]
+            ],
+            "required": ["glossary", "participants", "stylePreferences", "corrections", "identityMerges"]
+        ]
+    }
+
+    private static func memorySuggestionPrompt(transcript: String, note: String, currentMemory: String) -> String {
+        """
+        Bạn đang giúp một ứng dụng ghi chú cuộc họp học thêm từ vựng và người tham gia mới.
+        Bộ nhớ hiện tại (đã xác nhận, KHÔNG đề xuất lại các mục này):
+        \(currentMemory.isEmpty ? "(trống)" : currentMemory)
+
+        So sánh bản chép lời và ghi chú cuộc họp bên dưới với bộ nhớ hiện tại. Đề xuất TỐI ĐA 10 mục MỚI cho mỗi loại:
+        - glossary: tên riêng/dự án/thuật ngữ chuyên ngành xuất hiện rõ ràng, chưa có trong bộ nhớ.
+        - participants: tên người tham gia xuất hiện rõ ràng, chưa có trong bộ nhớ.
+        - stylePreferences: CHỈ đề xuất nếu ghi chú cho thấy một cấu trúc/định dạng lặp lại đáng chú ý.
+        - corrections: các từ/cụm từ trong GHI CHÚ CUỘC HỌP có khả năng là lỗi nhận dạng giọng nói (ASR) của một thuật ngữ hoặc tên đã có trong bộ nhớ hiện tại (kể cả các biến thể đã biết ở trên). Với mỗi lỗi, ghi rõ văn bản sai (wrongText) đúng như trong ghi chú, văn bản đúng (correctText) lấy từ bộ nhớ, và các phương án khác nếu không chắc chắn (alternatives).
+        - identityMerges: nếu nhiều tên khác nhau trong bản chép lời/ghi chú có khả năng chỉ cùng một người, đề xuất gộp lại (names, ít nhất 2 tên) và tên đầy đủ/chính thức nhất nếu xác định được (canonicalName).
+
+        Không đoán, không suy diễn. Nếu không có mục nào đáng tin cậy cho một loại, trả về mảng rỗng cho loại đó.
+
+        BẢN CHÉP LỜI:
+        \(transcript)
+
+        GHI CHÚ CUỘC HỌP:
+        \(note)
+        """
+    }
+
+    static func parseMemoryDraft(from json: Data) -> MemoryDraft {
+        struct RawEntry: Decodable {
+            let term: String?
+            let name: String?
+            let note: String?
+            let category: String?
+            let confidence: Double?
+            let snippet: String?
+        }
+        struct RawCorrection: Decodable {
+            let wrongText: String?
+            let correctText: String?
+            let alternatives: [String]?
+            let kind: String?
+            let confidence: Double?
+            let snippet: String?
+        }
+        struct RawMerge: Decodable {
+            let names: [String]?
+            let canonicalName: String?
+            let confidence: Double?
+            let snippet: String?
+        }
+        struct RawDraft: Decodable {
+            let glossary: [RawEntry]?
+            let participants: [RawEntry]?
+            let stylePreferences: [RawEntry]?
+            let corrections: [RawCorrection]?
+            let identityMerges: [RawMerge]?
+        }
+        guard let raw = try? JSONDecoder().decode(RawDraft.self, from: json) else { return MemoryDraft() }
+        let now = Date()
+
+        let glossary: [GlossaryEntry] = (raw.glossary ?? []).compactMap { entry in
+            guard let term = entry.term, !term.isEmpty,
+                  let categoryRaw = entry.category, let category = GlossaryCategory(rawValue: categoryRaw) else { return nil }
+            return GlossaryEntry(term: term, category: category, lastUsedAt: now, source: .suggested, confirmed: false, confidence: entry.confidence, snippet: entry.snippet)
+        }
+        let participants: [Participant] = (raw.participants ?? []).compactMap { entry in
+            guard let name = entry.name, !name.isEmpty else { return nil }
+            return Participant(name: name, lastSeenAt: now, source: .suggested, confirmed: false, confidence: entry.confidence, snippet: entry.snippet)
+        }
+        let styles: [StylePreference] = (raw.stylePreferences ?? []).compactMap { entry in
+            guard let note = entry.note, !note.isEmpty else { return nil }
+            return StylePreference(note: note, source: .suggested, confirmed: false, confidence: entry.confidence, snippet: entry.snippet)
+        }
+        let corrections: [NoteCorrection] = (raw.corrections ?? []).compactMap { entry in
+            guard let wrongText = entry.wrongText, !wrongText.isEmpty,
+                  let correctText = entry.correctText, !correctText.isEmpty,
+                  let kindRaw = entry.kind, let kind = CorrectionKind(rawValue: kindRaw) else { return nil }
+            return NoteCorrection(wrongText: wrongText, correctText: correctText, alternatives: entry.alternatives ?? [], kind: kind, confidence: entry.confidence, snippet: entry.snippet)
+        }
+        let identityMerges: [IdentityMergeSuggestion] = (raw.identityMerges ?? []).compactMap { entry in
+            guard let names = entry.names, names.count >= 2 else { return nil }
+            return IdentityMergeSuggestion(names: names, canonicalName: entry.canonicalName, confidence: entry.confidence, snippet: entry.snippet)
+        }
+        return MemoryDraft(glossary: glossary, participants: participants, stylePreferences: styles, corrections: corrections, identityMerges: identityMerges)
     }
 
     private static func todayString() -> String {
@@ -434,6 +634,7 @@ actor GeminiTranscriptionService {
 
     private func generateText(
         parts: [[String: Any]],
+        systemInstruction: String? = nil,
         apiKey: String
     ) async throws -> String {
         let url = apiURL(
@@ -443,9 +644,7 @@ actor GeminiTranscriptionService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "contents": [["parts": parts]]
-        ])
+        request.httpBody = try JSONSerialization.data(withJSONObject: Self.requestBody(parts: parts, systemInstruction: systemInstruction))
 
         let (data, response) = try await URLSession.shared.data(for: request)
         try validate(response, data: data)
@@ -463,6 +662,14 @@ actor GeminiTranscriptionService {
             throw GeminiTranscriptionError.invalidResponse("The text response was empty.")
         }
         return text
+    }
+
+    static func requestBody(parts: [[String: Any]], systemInstruction: String?) -> [String: Any] {
+        var body: [String: Any] = ["contents": [["parts": parts]]]
+        if let systemInstruction, !systemInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["system_instruction"] = ["parts": [["text": systemInstruction]]]
+        }
+        return body
     }
 
     private func fetchRemoteFile(named name: String, apiKey: String) async throws -> RemoteFile {

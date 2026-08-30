@@ -11,6 +11,9 @@ struct MeetingDetailView: View {
     let onDelete: () -> Void
     @State private var selectedTab: DetailTab
     @State private var isActionsPopoverPresented = false
+    @State private var corrections: [NoteCorrection] = []
+    @State private var activeCorrection: NoteCorrection?
+    @State private var correctionError: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(meeting: MeetingRecord, engine: RecordingEngine, onRename: @escaping () -> Void, onDelete: @escaping () -> Void) {
@@ -29,8 +32,25 @@ struct MeetingDetailView: View {
         }
         .background(AnLuongPalette.readingSurface)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { loadCorrections() }
         .onChange(of: meeting.id) { _, _ in
             selectedTab = meeting.meetingNoteURL != nil ? .meetingNote : .transcript
+            loadCorrections()
+        }
+        .popover(item: $activeCorrection) { correction in
+            CorrectionPickerView(
+                correction: correction,
+                onChoose: { chosenText in applyCorrectionChoice(correction, chosenText: chosenText) },
+                onKeepOriginal: { applyCorrectionChoice(correction, chosenText: nil) }
+            )
+        }
+        .alert(
+            "Could not save correction",
+            isPresented: Binding(get: { correctionError != nil }, set: { if !$0 { correctionError = nil } })
+        ) {
+            Button("OK") { correctionError = nil }
+        } message: {
+            Text(correctionError ?? "Please try again.")
         }
     }
 
@@ -174,7 +194,9 @@ struct MeetingDetailView: View {
                     emptyTitle: "Meeting note unavailable",
                     emptyMessage: "A meeting note has not been generated for this recording.",
                     reduceMotion: reduceMotion,
-                    rendersMarkdown: true
+                    rendersMarkdown: true,
+                    corrections: corrections,
+                    onCorrectionTap: { activeCorrection = $0 }
                 )
             } else {
                 AnLuongEmptyState(
@@ -248,6 +270,53 @@ struct MeetingDetailView: View {
         }
         appendCurrent()
         return sections
+    }
+
+    private func loadCorrections() {
+        guard let noteURL = meeting.meetingNoteURL else { corrections = []; return }
+        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
+        corrections = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName).load()
+    }
+
+    private func applyCorrectionChoice(_ correction: NoteCorrection, chosenText: String?) {
+        guard let noteURL = meeting.meetingNoteURL else { return }
+        var updatedCorrection = correction
+        do {
+            if let chosenText {
+                let rawNote = try String(contentsOf: noteURL, encoding: .utf8)
+                let fixedNote = applyCorrection(updatedCorrection, chosenText: chosenText, in: rawNote)
+                try Data(fixedNote.utf8).write(to: noteURL, options: .atomic)
+                updatedCorrection.status = .accepted
+
+                var memory = engine.memoryStore.load()
+                switch updatedCorrection.kind {
+                case .glossaryTerm:
+                    if let index = memory.glossary.firstIndex(where: { $0.term == chosenText }),
+                       !memory.glossary[index].aliases.contains(correction.wrongText) {
+                        memory.glossary[index].aliases.append(correction.wrongText)
+                    }
+                case .participantName:
+                    if let index = memory.participants.firstIndex(where: { $0.name == chosenText }),
+                       !memory.participants[index].aliases.contains(correction.wrongText) {
+                        memory.participants[index].aliases.append(correction.wrongText)
+                    }
+                }
+                try engine.memoryStore.save(memory)
+            } else {
+                updatedCorrection.status = .keptOriginal
+            }
+
+            let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
+            let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
+            var all = store.load()
+            if let index = all.firstIndex(where: { $0.id == correction.id }) {
+                all[index] = updatedCorrection
+            }
+            try store.save(all)
+            corrections = all
+        } catch {
+            correctionError = error.localizedDescription
+        }
     }
 
     private enum DetailTab: Hashable {
@@ -383,13 +452,17 @@ private struct ReadOnlyArtifactView: View {
     let emptyMessage: String
     let reduceMotion: Bool
     let rendersMarkdown: Bool
+    let corrections: [NoteCorrection]
+    let onCorrectionTap: ((NoteCorrection) -> Void)?
 
     init(
         url: URL?,
         emptyTitle: String,
         emptyMessage: String,
         reduceMotion: Bool,
-        rendersMarkdown: Bool = false
+        rendersMarkdown: Bool = false,
+        corrections: [NoteCorrection] = [],
+        onCorrectionTap: ((NoteCorrection) -> Void)? = nil
     ) {
         self.url = url
         self.text = nil
@@ -397,6 +470,8 @@ private struct ReadOnlyArtifactView: View {
         self.emptyMessage = emptyMessage
         self.reduceMotion = reduceMotion
         self.rendersMarkdown = rendersMarkdown
+        self.corrections = corrections
+        self.onCorrectionTap = onCorrectionTap
     }
 
     init(
@@ -412,12 +487,14 @@ private struct ReadOnlyArtifactView: View {
         self.emptyMessage = emptyMessage
         self.reduceMotion = reduceMotion
         self.rendersMarkdown = rendersMarkdown
+        self.corrections = []
+        self.onCorrectionTap = nil
     }
 
     var body: some View {
         if let content = resolvedText {
             if rendersMarkdown {
-                MarkdownDocumentView(markdown: content, reduceMotion: reduceMotion)
+                MarkdownDocumentView(markdown: content, reduceMotion: reduceMotion, corrections: corrections, onCorrectionTap: onCorrectionTap)
             } else {
                 plainTextView(content)
             }
@@ -630,6 +707,8 @@ enum AnLuongMarkdown {
 private struct MarkdownDocumentView: View {
     let markdown: String
     let reduceMotion: Bool
+    var corrections: [NoteCorrection] = []
+    var onCorrectionTap: ((NoteCorrection) -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -638,7 +717,7 @@ private struct MarkdownDocumentView: View {
 
                 LazyVStack(alignment: .leading, spacing: 17) {
                     ForEach(Array(AnLuongMarkdown.parse(markdown).enumerated()), id: \.offset) { _, block in
-                        MarkdownBlockView(block: block)
+                        MarkdownBlockView(block: block, corrections: corrections)
                     }
                 }
                 .frame(maxWidth: 760, alignment: .leading)
@@ -650,6 +729,12 @@ private struct MarkdownDocumentView: View {
         }
         .scrollIndicators(.hidden)
         .background(AnLuongPalette.readingSurface)
+        .environment(\.openURL, OpenURLAction { url in
+            guard url.scheme == "anluong-correction", let id = url.host,
+                  let correction = corrections.first(where: { $0.id == id }) else { return .discarded }
+            onCorrectionTap?(correction)
+            return .handled
+        })
     }
 
     private var documentMasthead: some View {
@@ -670,6 +755,7 @@ private struct MarkdownDocumentView: View {
 
 private struct MarkdownBlockView: View {
     let block: AnLuongMarkdownBlock
+    var corrections: [NoteCorrection] = []
 
     var body: some View {
         switch block {
@@ -746,7 +832,8 @@ private struct MarkdownBlockView: View {
     }
 
     private func inlineText(_ text: String) -> Text {
-        guard let attributed = try? AttributedString(markdown: text) else {
+        let highlighted = wrapCorrectionsAsLinks(in: text, corrections: corrections)
+        guard let attributed = try? AttributedString(markdown: highlighted) else {
             return Text(text)
         }
         return Text(attributed)
@@ -777,5 +864,30 @@ private struct ArtifactReveal: ViewModifier {
                     .scaleEffect(phase.isIdentity ? 1 : 0.985)
             }
         }
+    }
+}
+
+private struct CorrectionPickerView: View {
+    let correction: NoteCorrection
+    let onChoose: (String) -> Void
+    let onKeepOriginal: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Did you mean…?").font(.headline)
+            Text("\"\(correction.wrongText)\"").font(.subheadline).foregroundStyle(.secondary)
+            Button(correction.correctText) { onChoose(correction.correctText); dismiss() }
+                .buttonStyle(.borderedProminent)
+            ForEach(correction.alternatives, id: \.self) { alternative in
+                Button(alternative) { onChoose(alternative); dismiss() }
+                    .buttonStyle(.bordered)
+            }
+            Button("Keep original") { onKeepOriginal(); dismiss() }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(width: 260)
     }
 }

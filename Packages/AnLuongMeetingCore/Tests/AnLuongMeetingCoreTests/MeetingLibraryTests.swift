@@ -27,6 +27,18 @@ final class MeetingLibraryTests: XCTestCase {
         XCTAssertEqual(records.first(where: { $0.displayName == "processing" })?.status, .processing)
     }
 
+    func testScanPopulatesCorrectionsURLOnlyWhenSidecarExists() throws {
+        let withCorrections = directory.appendingPathComponent("with-corrections.m4a")
+        let withoutCorrections = directory.appendingPathComponent("without-corrections.m4a")
+        for url in [withCorrections, withoutCorrections] { try Data([0, 1]).write(to: url) }
+        try Data("[]".utf8).write(to: directory.appendingPathComponent("with-corrections.note-corrections.json"))
+
+        let records = try MeetingLibraryIndex.scan(directory: directory, processingURL: nil)
+
+        XCTAssertNotNil(records.first(where: { $0.displayName == "with-corrections" })?.correctionsURL)
+        XCTAssertNil(records.first(where: { $0.displayName == "without-corrections" })?.correctionsURL)
+    }
+
     func testFilterSearchAndStatus() {
         let now = Date()
         let records = [

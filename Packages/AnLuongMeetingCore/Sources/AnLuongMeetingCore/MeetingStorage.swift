@@ -74,7 +74,7 @@ public struct FileMeetingStorage: MeetingStorage {
     }
 
     private func artifactURLs(for meeting: MeetingRecord) -> [URL] {
-        [meeting.recordingURL, meeting.transcriptURL, meeting.meetingNoteURL].compactMap { $0 }
+        [meeting.recordingURL, meeting.transcriptURL, meeting.meetingNoteURL, meeting.correctionsURL].compactMap { $0 }
     }
 
     private func destination(for source: URL, name: String) -> URL {
@@ -83,6 +83,8 @@ public struct FileMeetingStorage: MeetingStorage {
             suffix = ".m4a"
         } else if source.lastPathComponent.hasSuffix(".meeting-notes.txt") {
             suffix = ".meeting-notes.txt"
+        } else if source.lastPathComponent.hasSuffix(".note-corrections.json") {
+            suffix = ".note-corrections.json"
         } else {
             suffix = ".txt"
         }

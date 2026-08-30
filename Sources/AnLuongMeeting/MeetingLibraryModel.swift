@@ -37,18 +37,21 @@ struct MeetingRecord: Identifiable, Hashable {
     let recordingURL: URL
     let transcriptURL: URL?
     let meetingNoteURL: URL?
+    let correctionsURL: URL?
     let modifiedAt: Date
     let duration: TimeInterval?
     let status: MeetingStatus
 
     var hasTranscript: Bool { transcriptURL != nil }
     var hasMeetingNote: Bool { meetingNoteURL != nil }
+    var hasCorrections: Bool { correctionsURL != nil }
 
     init(
         displayName: String,
         recordingURL: URL,
         transcriptURL: URL?,
         meetingNoteURL: URL?,
+        correctionsURL: URL? = nil,
         modifiedAt: Date,
         duration: TimeInterval?,
         status: MeetingStatus
@@ -58,6 +61,7 @@ struct MeetingRecord: Identifiable, Hashable {
         self.recordingURL = recordingURL
         self.transcriptURL = transcriptURL
         self.meetingNoteURL = meetingNoteURL
+        self.correctionsURL = correctionsURL
         self.modifiedAt = modifiedAt
         self.duration = duration
         self.status = status
@@ -94,6 +98,7 @@ struct MeetingLibraryIndex {
     private static let recordingExtension = "m4a"
     private static let transcriptSuffix = ".txt"
     private static let meetingNoteSuffix = ".meeting-notes.txt"
+    private static let correctionsSuffix = ".note-corrections.json"
 
     static func scan(
         directory: URL,
@@ -118,8 +123,10 @@ struct MeetingLibraryIndex {
                 let baseName = recordingURL.deletingPathExtension().lastPathComponent
                 let transcriptURL = directory.appendingPathComponent(baseName + transcriptSuffix)
                 let meetingNoteURL = directory.appendingPathComponent(baseName + meetingNoteSuffix)
+                let correctionsURL = directory.appendingPathComponent(baseName + correctionsSuffix)
                 let hasTranscript = fileManager.fileExists(atPath: transcriptURL.path)
                 let hasMeetingNote = fileManager.fileExists(atPath: meetingNoteURL.path)
+                let hasCorrections = fileManager.fileExists(atPath: correctionsURL.path)
                 let modifiedAt = (try? recordingURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                     ?? Date.distantPast
                 let status: MeetingStatus
@@ -136,6 +143,7 @@ struct MeetingLibraryIndex {
                     recordingURL: recordingURL,
                     transcriptURL: hasTranscript ? transcriptURL : nil,
                     meetingNoteURL: hasMeetingNote ? meetingNoteURL : nil,
+                    correctionsURL: hasCorrections ? correctionsURL : nil,
                     modifiedAt: modifiedAt,
                     duration: duration(for: recordingURL),
                     status: status

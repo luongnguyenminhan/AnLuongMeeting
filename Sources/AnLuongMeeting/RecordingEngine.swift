@@ -59,6 +59,10 @@ final class RecordingEngine: ObservableObject {
 
     private let apiKeyStore = GeminiAPIKeyStore()
     private let transcriptionService = GeminiTranscriptionService()
+    let memoryStore: MemoryStore
+    @Published private(set) var pendingMemoryCount = 0
+    @Published private(set) var isBackfillingMemory = false
+    @Published private(set) var backfillProgress: (current: Int, total: Int) = (0, 0)
     private var transcriptionTask: Task<Void, Never>?
     private var systemCapture: SystemAudioCapture?
     private var micCapture: MicrophoneCapture?
@@ -73,6 +77,7 @@ final class RecordingEngine: ObservableObject {
         let savedSource = SystemAudioSourceSelection.loadSaved()
         geminiAPIKey = savedKey
         selectedSystemAudioSource = savedSource
+        memoryStore = MemoryStore(directory: Self.defaultRecordingsDirectory())
         if savedSource.kind != .all {
             systemAudioSources = [
                 .all,
@@ -82,15 +87,18 @@ final class RecordingEngine: ObservableObject {
         transcriptionState = savedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? .notConfigured
             : .idle
+        pendingMemoryCount = memoryStore.load().pendingCount
     }
 
-    var recordingsDirectory: URL {
+    private static func defaultRecordingsDirectory() -> URL {
         let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Recordings", isDirectory: true)
         if !FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
         return url
     }
+
+    var recordingsDirectory: URL { Self.defaultRecordingsDirectory() }
 
     var canChangeSystemAudioSource: Bool {
         !isRecording && !isStarting && !isFinalizing && !isTranscribing
@@ -297,11 +305,13 @@ final class RecordingEngine: ObservableObject {
         transcriptionState = .processing(current: 0, total: 0)
         let service = transcriptionService
 
+        let memoryContext = memoryStore.load().renderForPrompt()
         transcriptionTask = Task { @MainActor [weak self] in
             do {
                 let result = try await service.transcribe(
                     recordingURL: recordingURL,
                     apiKey: key,
+                    memoryContext: memoryContext,
                     progress: { [weak self] progress in
                         Task { @MainActor in
                             guard let self else { return }
@@ -322,6 +332,7 @@ final class RecordingEngine: ObservableObject {
                     transcriptURL: result.transcriptURL,
                     meetingNoteURL: result.meetingNoteURL
                 )
+                self?.refreshMemorySuggestions(transcriptURL: result.transcriptURL, meetingNoteURL: result.meetingNoteURL, apiKey: key)
                 self?.isTranscribing = false
                 self?.transcriptionTask = nil
                 self?.processingRecordingURL = nil
@@ -345,6 +356,88 @@ final class RecordingEngine: ObservableObject {
 
     private func notifyLibraryChanged() {
         NotificationCenter.default.post(name: .anluongLibraryDidChange, object: nil)
+    }
+
+    func refreshPendingMemoryCount() {
+        pendingMemoryCount = memoryStore.load().pendingCount
+    }
+
+    /// Scans existing meetings that already have both a transcript and a note, and runs the
+    /// memory-suggestion pass over each one — lets the glossary catch up on meetings recorded
+    /// before this feature existed, instead of only learning from new recordings.
+    func backfillMemoryFromExistingMeetings() {
+        guard !isBackfillingMemory else { return }
+        let key = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        guard let records = try? MeetingLibraryIndex.scan(directory: recordingsDirectory, processingURL: nil) else { return }
+        let eligible = records.filter { $0.hasTranscript && $0.hasMeetingNote }
+        guard !eligible.isEmpty else { return }
+
+        isBackfillingMemory = true
+        backfillProgress = (0, eligible.count)
+        let store = memoryStore
+        let service = transcriptionService
+
+        Task {
+            var memory = store.load()
+            for (index, record) in eligible.enumerated() {
+                if let transcriptURL = record.transcriptURL,
+                   let noteURL = record.meetingNoteURL,
+                   let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
+                   let note = try? String(contentsOf: noteURL, encoding: .utf8),
+                   let draft = try? await service.suggestMemoryUpdates(
+                       transcript: transcript,
+                       note: note,
+                       currentMemory: memory.renderForPrompt(),
+                       apiKey: key
+                   ) {
+                    memory.merge(draft: draft)
+                    Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
+                    Self.saveCorrections(draft.corrections, forNoteAt: noteURL)
+                }
+                await MainActor.run { self.backfillProgress = (index + 1, eligible.count) }
+            }
+            try? store.save(memory)
+            await MainActor.run {
+                self.isBackfillingMemory = false
+                self.refreshPendingMemoryCount()
+            }
+        }
+    }
+
+    private func refreshMemorySuggestions(transcriptURL: URL, meetingNoteURL: URL, apiKey: String) {
+        let store = memoryStore
+        let service = transcriptionService
+        Task {
+            guard let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
+                  let note = try? String(contentsOf: meetingNoteURL, encoding: .utf8) else { return }
+            var memory = store.load()
+            guard let draft = try? await service.suggestMemoryUpdates(
+                transcript: transcript,
+                note: note,
+                currentMemory: memory.renderForPrompt(),
+                apiKey: apiKey
+            ) else { return }
+            memory.merge(draft: draft)
+            Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
+            try? store.save(memory)
+            Self.saveCorrections(draft.corrections, forNoteAt: meetingNoteURL)
+            await MainActor.run { self.refreshPendingMemoryCount() }
+        }
+    }
+
+    private static func mergePendingIdentityMerges(_ merges: [IdentityMergeSuggestion], into memory: inout MemoryData) {
+        let existingNameSets = Set(memory.pendingMerges.map { Set($0.names.map { $0.lowercased() }) })
+        for merge in merges where !existingNameSets.contains(Set(merge.names.map { $0.lowercased() })) {
+            memory.pendingMerges.append(merge)
+        }
+    }
+
+    private static func saveCorrections(_ corrections: [NoteCorrection], forNoteAt noteURL: URL) {
+        guard !corrections.isEmpty else { return }
+        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
+        let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
+        try? store.save(corrections)
     }
 
     private func alertSystemAudioFailure() {
@@ -405,6 +498,7 @@ final class RecordingEngine: ObservableObject {
 
         let service = transcriptionService
         let recordingURL = meeting.recordingURL
+        let memoryContext = memoryStore.load().renderForPrompt()
 
         transcriptionTask = Task { @MainActor [weak self] in
             do {
@@ -414,6 +508,7 @@ final class RecordingEngine: ObservableObject {
                     let transcriptURL = try await service.transcribeOnly(
                         recordingURL: recordingURL,
                         apiKey: key,
+                        memoryContext: memoryContext,
                         progress: { [weak self] progress in
                             Task { @MainActor in
                                 guard let self else { return }
@@ -438,19 +533,22 @@ final class RecordingEngine: ObservableObject {
                     let noteURL = try await service.regenerateNote(
                         transcriptURL: transcriptURL,
                         recordingURL: recordingURL,
-                        apiKey: key
+                        apiKey: key,
+                        memoryContext: memoryContext
                     )
                     guard !Task.isCancelled else { return }
                     self?.transcriptionState = .completed(
                         transcriptURL: transcriptURL,
                         meetingNoteURL: noteURL
                     )
+                    self?.refreshMemorySuggestions(transcriptURL: transcriptURL, meetingNoteURL: noteURL, apiKey: key)
 
                 case .both:
                     self?.transcriptionState = .processing(current: 0, total: 0)
                     let result = try await service.transcribe(
                         recordingURL: recordingURL,
                         apiKey: key,
+                        memoryContext: memoryContext,
                         progress: { [weak self] progress in
                             Task { @MainActor in
                                 guard let self else { return }
@@ -471,6 +569,7 @@ final class RecordingEngine: ObservableObject {
                         transcriptURL: result.transcriptURL,
                         meetingNoteURL: result.meetingNoteURL
                     )
+                    self?.refreshMemorySuggestions(transcriptURL: result.transcriptURL, meetingNoteURL: result.meetingNoteURL, apiKey: key)
                 }
 
                 self?.isTranscribing = false

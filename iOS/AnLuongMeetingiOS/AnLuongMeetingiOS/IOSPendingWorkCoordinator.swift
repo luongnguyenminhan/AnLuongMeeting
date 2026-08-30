@@ -32,6 +32,10 @@ final class IOSPendingWorkCoordinator: ObservableObject {
     private let keyStore: any APIKeyStore
     private let notifications: any IOSNotificationSink
     private let service: any MeetingTranscriptionService
+    let memoryStore: MemoryStore
+    @Published private(set) var pendingMemoryCount = 0
+    @Published private(set) var isBackfillingMemory = false
+    @Published private(set) var backfillProgress: (current: Int, total: Int) = (0, 0)
     private var processingTask: Task<Void, Never>?
     private var lastRecord: MeetingRecord?
     private var lastMode: GeminiRegenerationMode?
@@ -40,12 +44,15 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         storage: any MeetingStorage = IOSMeetingStorage(),
         keyStore: any APIKeyStore = IOSAPIKeyStore(),
         notificationCoordinator: (any IOSNotificationSink)? = nil,
-        transcriptionService: any MeetingTranscriptionService = GeminiTranscriptionService()
+        transcriptionService: any MeetingTranscriptionService = GeminiTranscriptionService(),
+        memoryStore: MemoryStore = MemoryStore(directory: IOSMeetingStorage().recordingsDirectory)
     ) {
         self.storage = storage
         self.keyStore = keyStore
         self.notifications = notificationCoordinator ?? IOSNotificationCoordinator.shared
         self.service = transcriptionService
+        self.memoryStore = memoryStore
+        self.pendingMemoryCount = memoryStore.load().pendingCount
     }
 
     var shouldShowStatusCard: Bool {
@@ -157,6 +164,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         lastMode = mode
         activeRecordingURL = record.recordingURL
         errorMessage = nil
+        let memoryContext = memoryStore.load().renderForPrompt()
         do {
             switch mode {
             case .transcriptOnly:
@@ -165,6 +173,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                 _ = try await service.transcribeOnly(
                     recordingURL: record.recordingURL,
                     apiKey: apiKey,
+                    memoryContext: memoryContext,
                     progress: progressHandler(for: mode)
                 )
                 notifications.notifyTranscriptReady()
@@ -174,20 +183,24 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                 guard let transcriptURL = record.transcriptURL else {
                     throw GeminiTranscriptionError.emptyTranscript(0)
                 }
-                _ = try await service.regenerateNote(
+                let noteURL = try await service.regenerateNote(
                     transcriptURL: transcriptURL,
                     recordingURL: record.recordingURL,
                     apiKey: apiKey,
+                    memoryContext: memoryContext,
                     progress: progressHandler(for: mode)
                 )
+                await refreshMemory(transcriptURL: transcriptURL, meetingNoteURL: noteURL, apiKey: apiKey)
             case .both:
                 processingState = .processing(mode: mode, current: 0, total: 0)
                 progressMessage = "Preparing the recording…"
-                _ = try await service.transcribe(
+                let result = try await service.transcribe(
                     recordingURL: record.recordingURL,
                     apiKey: apiKey,
+                    memoryContext: memoryContext,
                     progress: progressHandler(for: mode)
                 )
+                await refreshMemory(transcriptURL: result.transcriptURL, meetingNoteURL: result.meetingNoteURL, apiKey: apiKey)
             }
             guard !Task.isCancelled else { return }
             processingState = .completed(record.recordingURL)
@@ -204,6 +217,76 @@ final class IOSPendingWorkCoordinator: ObservableObject {
             progressMessage = error.localizedDescription
             errorMessage = error.localizedDescription
             notifications.notifyProcessingFailed()
+        }
+    }
+
+    private func refreshMemory(transcriptURL: URL, meetingNoteURL: URL, apiKey: String) async {
+        guard let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
+              let note = try? String(contentsOf: meetingNoteURL, encoding: .utf8) else { return }
+        var memory = memoryStore.load()
+        guard let draft = try? await service.suggestMemoryUpdates(
+            transcript: transcript,
+            note: note,
+            currentMemory: memory.renderForPrompt(),
+            apiKey: apiKey
+        ) else { return }
+        memory.merge(draft: draft)
+        Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
+        try? memoryStore.save(memory)
+        Self.saveCorrections(draft.corrections, forNoteAt: meetingNoteURL)
+        pendingMemoryCount = memory.pendingCount
+    }
+
+    private static func mergePendingIdentityMerges(_ merges: [IdentityMergeSuggestion], into memory: inout MemoryData) {
+        let existingNameSets = Set(memory.pendingMerges.map { Set($0.names.map { $0.lowercased() }) })
+        for merge in merges where !existingNameSets.contains(Set(merge.names.map { $0.lowercased() })) {
+            memory.pendingMerges.append(merge)
+        }
+    }
+
+    private static func saveCorrections(_ corrections: [NoteCorrection], forNoteAt noteURL: URL) {
+        guard !corrections.isEmpty else { return }
+        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
+        let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
+        try? store.save(corrections)
+    }
+
+    /// Scans existing meetings that already have both a transcript and a note, and runs the
+    /// memory-suggestion pass over each one — lets the glossary catch up on meetings recorded
+    /// before this feature existed, instead of only learning from new recordings.
+    func backfillMemoryFromExistingMeetings() {
+        guard !isBackfillingMemory else { return }
+        guard let key = keyStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+        guard let records = try? storage.scan(processingURL: activeRecordingURL) else { return }
+        let eligible = records.filter { $0.hasTranscript && $0.hasMeetingNote }
+        guard !eligible.isEmpty else { return }
+
+        isBackfillingMemory = true
+        backfillProgress = (0, eligible.count)
+
+        Task { [weak self] in
+            guard let self else { return }
+            var memory = self.memoryStore.load()
+            for (index, record) in eligible.enumerated() {
+                if let transcriptURL = record.transcriptURL,
+                   let noteURL = record.meetingNoteURL,
+                   let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
+                   let note = try? String(contentsOf: noteURL, encoding: .utf8),
+                   let draft = try? await self.service.suggestMemoryUpdates(
+                       transcript: transcript,
+                       note: note,
+                       currentMemory: memory.renderForPrompt(),
+                       apiKey: key
+                   ) {
+                    memory.merge(draft: draft)
+                    Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
+                    Self.saveCorrections(draft.corrections, forNoteAt: noteURL)
+                }
+                self.backfillProgress = (index + 1, eligible.count)
+            }
+            try? self.memoryStore.save(memory)
+            self.pendingMemoryCount = memory.pendingCount
+            self.isBackfillingMemory = false
         }
     }
 

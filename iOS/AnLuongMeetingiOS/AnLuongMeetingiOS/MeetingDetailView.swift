@@ -22,6 +22,9 @@ struct IOSMeetingDetailView: View {
     @State private var showRename = false
     @State private var showDelete = false
     @State private var name = ""
+    @State private var corrections: [NoteCorrection] = []
+    @State private var activeCorrection: NoteCorrection?
+    @State private var correctionError: String?
 
     var body: some View {
         ScrollView {
@@ -81,6 +84,23 @@ struct IOSMeetingDetailView: View {
         }
         .confirmationDialog("Delete \(meeting.displayName)?", isPresented: $showDelete, titleVisibility: .visible) {
             Button("Delete Permanently", role: .destructive) { model.delete(meeting) }
+        }
+        .task { loadCorrections() }
+        .sheet(item: $activeCorrection) { correction in
+            CorrectionPickerView(
+                correction: correction,
+                onChoose: { chosenText in applyCorrectionChoice(correction, chosenText: chosenText) },
+                onKeepOriginal: { applyCorrectionChoice(correction, chosenText: nil) }
+            )
+            .presentationDetents([.height(280)])
+        }
+        .alert(
+            "Could not save correction",
+            isPresented: Binding(get: { correctionError != nil }, set: { if !$0 { correctionError = nil } })
+        ) {
+            Button("OK") { correctionError = nil }
+        } message: {
+            Text(correctionError ?? "Please try again.")
         }
     }
 
@@ -181,7 +201,11 @@ struct IOSMeetingDetailView: View {
     private var artifact: some View {
         let url = tab == .meetingNote ? meeting.meetingNoteURL : meeting.transcriptURL
         if let url, let text = try? String(contentsOf: url, encoding: .utf8) {
-            MarkdownDocumentView(markdown: text)
+            MarkdownDocumentView(
+                markdown: text,
+                corrections: tab == .meetingNote ? corrections : [],
+                onCorrectionTap: { activeCorrection = $0 }
+            )
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -249,6 +273,53 @@ struct IOSMeetingDetailView: View {
         String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
     }
 
+    private func loadCorrections() {
+        guard let noteURL = meeting.meetingNoteURL else { corrections = []; return }
+        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
+        corrections = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName).load()
+    }
+
+    private func applyCorrectionChoice(_ correction: NoteCorrection, chosenText: String?) {
+        guard let noteURL = meeting.meetingNoteURL else { return }
+        var updatedCorrection = correction
+        do {
+            if let chosenText {
+                let rawNote = try String(contentsOf: noteURL, encoding: .utf8)
+                let fixedNote = applyCorrection(updatedCorrection, chosenText: chosenText, in: rawNote)
+                try Data(fixedNote.utf8).write(to: noteURL, options: .atomic)
+                updatedCorrection.status = .accepted
+
+                var memory = pending.memoryStore.load()
+                switch updatedCorrection.kind {
+                case .glossaryTerm:
+                    if let index = memory.glossary.firstIndex(where: { $0.term == chosenText }),
+                       !memory.glossary[index].aliases.contains(correction.wrongText) {
+                        memory.glossary[index].aliases.append(correction.wrongText)
+                    }
+                case .participantName:
+                    if let index = memory.participants.firstIndex(where: { $0.name == chosenText }),
+                       !memory.participants[index].aliases.contains(correction.wrongText) {
+                        memory.participants[index].aliases.append(correction.wrongText)
+                    }
+                }
+                try pending.memoryStore.save(memory)
+            } else {
+                updatedCorrection.status = .keptOriginal
+            }
+
+            let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
+            let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
+            var all = store.load()
+            if let index = all.firstIndex(where: { $0.id == correction.id }) {
+                all[index] = updatedCorrection
+            }
+            try store.save(all)
+            corrections = all
+        } catch {
+            correctionError = error.localizedDescription
+        }
+    }
+
     private var statusTitle: String { meeting.status.rawValue.capitalized }
     private var apiKey: String { IOSAPIKeyStore().load() ?? "" }
 }
@@ -298,5 +369,29 @@ private extension View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+private struct CorrectionPickerView: View {
+    let correction: NoteCorrection
+    let onChoose: (String) -> Void
+    let onKeepOriginal: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Did you mean…?").font(.headline)
+            Text("\"\(correction.wrongText)\"").font(.subheadline).foregroundStyle(.secondary)
+            Button(correction.correctText) { onChoose(correction.correctText); dismiss() }
+                .buttonStyle(.borderedProminent)
+            ForEach(correction.alternatives, id: \.self) { alternative in
+                Button(alternative) { onChoose(alternative); dismiss() }
+                    .buttonStyle(.bordered)
+            }
+            Button("Keep original") { onKeepOriginal(); dismiss() }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
     }
 }

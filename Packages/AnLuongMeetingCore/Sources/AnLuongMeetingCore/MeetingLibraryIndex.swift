@@ -5,6 +5,7 @@ public struct MeetingLibraryIndex {
     private static let recordingExtension = "m4a"
     private static let transcriptSuffix = ".txt"
     private static let meetingNoteSuffix = ".meeting-notes.txt"
+    private static let correctionsSuffix = ".note-corrections.json"
 
     public static func scan(
         directory: URL,
@@ -29,8 +30,10 @@ public struct MeetingLibraryIndex {
                 let baseName = recordingURL.deletingPathExtension().lastPathComponent
                 let transcriptURL = directory.appendingPathComponent(baseName + transcriptSuffix)
                 let meetingNoteURL = directory.appendingPathComponent(baseName + meetingNoteSuffix)
+                let correctionsURL = directory.appendingPathComponent(baseName + correctionsSuffix)
                 let hasTranscript = fileManager.fileExists(atPath: transcriptURL.path)
                 let hasMeetingNote = fileManager.fileExists(atPath: meetingNoteURL.path)
+                let hasCorrections = fileManager.fileExists(atPath: correctionsURL.path)
                 let modifiedAt = (try? recordingURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                     ?? Date.distantPast
                 let status: MeetingStatus
@@ -47,6 +50,7 @@ public struct MeetingLibraryIndex {
                     recordingURL: recordingURL,
                     transcriptURL: hasTranscript ? transcriptURL : nil,
                     meetingNoteURL: hasMeetingNote ? meetingNoteURL : nil,
+                    correctionsURL: hasCorrections ? correctionsURL : nil,
                     modifiedAt: modifiedAt,
                     duration: duration(for: recordingURL),
                     status: status

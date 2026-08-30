@@ -48,6 +48,31 @@ final class RecordingLibraryTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: fixture("keep.txt").path))
     }
 
+    func testRenameMovesTheCorrectionsSidecar() throws {
+        makeMeeting(named: "old-name", transcript: true, note: true)
+        createFile(named: "old-name.note-corrections.json")
+        let library = RecordingLibrary(directory: fixtureDirectory)
+        library.refresh()
+        let old = try XCTUnwrap(library.records.first { $0.displayName == "old-name" })
+
+        try library.rename(old, to: "new-name")
+
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name.note-corrections.json").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: fixture("old-name.note-corrections.json").path))
+    }
+
+    func testDeleteRemovesTheCorrectionsSidecar() throws {
+        makeMeeting(named: "to-delete", transcript: true, note: true)
+        createFile(named: "to-delete.note-corrections.json")
+        let library = RecordingLibrary(directory: fixtureDirectory)
+        library.refresh()
+        let meeting = try XCTUnwrap(library.records.first { $0.displayName == "to-delete" })
+
+        try library.deletePermanently(meeting)
+
+        XCTAssertFalse(fileManager.fileExists(atPath: fixture("to-delete.note-corrections.json").path))
+    }
+
     func testRenameCollisionThrowsBeforeChangingAnyArtifact() throws {
         makeMeeting(named: "source", transcript: true, note: true)
         makeMeeting(named: "target", transcript: false, note: false)

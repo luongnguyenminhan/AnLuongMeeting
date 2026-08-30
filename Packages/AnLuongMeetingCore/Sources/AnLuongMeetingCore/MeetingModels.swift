@@ -32,18 +32,21 @@ public struct MeetingRecord: Identifiable, Hashable, Sendable {
     public let recordingURL: URL
     public let transcriptURL: URL?
     public let meetingNoteURL: URL?
+    public let correctionsURL: URL?
     public let modifiedAt: Date
     public let duration: TimeInterval?
     public let status: MeetingStatus
 
     public var hasTranscript: Bool { transcriptURL != nil }
     public var hasMeetingNote: Bool { meetingNoteURL != nil }
+    public var hasCorrections: Bool { correctionsURL != nil }
 
     public init(
         displayName: String,
         recordingURL: URL,
         transcriptURL: URL?,
         meetingNoteURL: URL?,
+        correctionsURL: URL? = nil,
         modifiedAt: Date,
         duration: TimeInterval?,
         status: MeetingStatus
@@ -53,6 +56,7 @@ public struct MeetingRecord: Identifiable, Hashable, Sendable {
         self.recordingURL = recordingURL
         self.transcriptURL = transcriptURL
         self.meetingNoteURL = meetingNoteURL
+        self.correctionsURL = correctionsURL
         self.modifiedAt = modifiedAt
         self.duration = duration
         self.status = status

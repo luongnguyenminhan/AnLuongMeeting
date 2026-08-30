@@ -124,6 +124,92 @@ final class IOSCoreBehaviorTests: XCTestCase {
         XCTAssertEqual(notifications.meetingNoteReadyCount, 1)
         XCTAssertEqual(notifications.processingFailedCount, 0)
     }
+
+    @MainActor
+    func testCompletingNoteGenerationMergesSuggestedMemoryDraft() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("memory-fixture-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let recordingURL = directory.appendingPathComponent("Planning.m4a")
+        try Data([0]).write(to: recordingURL)
+        let transcriptURL = directory.appendingPathComponent("Planning.txt")
+        try Data("transcript".utf8).write(to: transcriptURL)
+        // TestTranscriptionService "generates" this exact note path — seed it so refreshMemory can read content.
+        try Data("note".utf8).write(to: recordingURL.deletingPathExtension().appendingPathExtension("meeting-notes.txt"))
+        let fixture = MeetingRecord(
+            displayName: "Planning",
+            recordingURL: recordingURL,
+            transcriptURL: transcriptURL,
+            meetingNoteURL: nil,
+            modifiedAt: .now,
+            duration: 1,
+            status: .partial
+        )
+        let service = TestTranscriptionService()
+        await service.setDraftToReturn(MemoryDraft(participants: [
+            Participant(name: "Chị Hoa", source: .suggested, confirmed: false)
+        ]))
+        let memoryStore = MemoryStore(directory: directory)
+        let coordinator = IOSPendingWorkCoordinator(
+            storage: TestMeetingStorage(records: [fixture], recordingsDirectory: directory),
+            keyStore: TestAPIKeyStore(value: "test-key"),
+            notificationCoordinator: TestNotificationSink(),
+            transcriptionService: service,
+            memoryStore: memoryStore
+        )
+
+        await coordinator.resumePendingWork()
+        for _ in 0..<3 { await Task.yield() }
+
+        let capturedContext = await service.capturedMemoryContext()
+        XCTAssertEqual(capturedContext, "")
+        let saved = memoryStore.load()
+        XCTAssertEqual(saved.participants.first?.name, "Chị Hoa")
+        XCTAssertEqual(saved.participants.first?.confirmed, false)
+        XCTAssertEqual(coordinator.pendingMemoryCount, 1)
+    }
+
+    @MainActor
+    func testCompletingNoteGenerationSavesCorrectionsAndPendingMerges() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("correction-fixture-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let recordingURL = directory.appendingPathComponent("Planning.m4a")
+        try Data([0]).write(to: recordingURL)
+        let transcriptURL = directory.appendingPathComponent("Planning.txt")
+        try Data("transcript".utf8).write(to: transcriptURL)
+        try Data("note mentioning Celesnet".utf8).write(to: recordingURL.deletingPathExtension().appendingPathExtension("meeting-notes.txt"))
+        let fixture = MeetingRecord(
+            displayName: "Planning",
+            recordingURL: recordingURL,
+            transcriptURL: transcriptURL,
+            meetingNoteURL: nil,
+            modifiedAt: .now,
+            duration: 1,
+            status: .partial
+        )
+        let service = TestTranscriptionService()
+        await service.setDraftToReturn(MemoryDraft(
+            corrections: [NoteCorrection(wrongText: "Celesnet", correctText: "Celesnity", kind: .glossaryTerm)],
+            identityMerges: [IdentityMergeSuggestion(names: ["Le Tan", "Eric Nguyen"], canonicalName: "Eric Nguyen")]
+        ))
+        let memoryStore = MemoryStore(directory: directory)
+        let coordinator = IOSPendingWorkCoordinator(
+            storage: TestMeetingStorage(records: [fixture], recordingsDirectory: directory),
+            keyStore: TestAPIKeyStore(value: "test-key"),
+            notificationCoordinator: TestNotificationSink(),
+            transcriptionService: service,
+            memoryStore: memoryStore
+        )
+
+        await coordinator.resumePendingWork()
+        for _ in 0..<3 { await Task.yield() }
+
+        let savedCorrections = NoteCorrectionStore(directory: directory, baseName: "Planning").load()
+        XCTAssertEqual(savedCorrections.first?.wrongText, "Celesnet")
+        let savedMemory = memoryStore.load()
+        XCTAssertEqual(savedMemory.pendingMerges.first?.names, ["Le Tan", "Eric Nguyen"])
+    }
 }
 
 private struct TestMeetingStorage: MeetingStorage {
@@ -152,15 +238,21 @@ private struct TestAPIKeyStore: APIKeyStore {
 
 private actor TestTranscriptionService: MeetingTranscriptionService {
     private(set) var transcribeCallCount = 0
+    private(set) var lastMemoryContext: String?
+    private var draftToReturn = MemoryDraft()
 
     func callCount() -> Int { transcribeCallCount }
+    func capturedMemoryContext() -> String? { lastMemoryContext }
+    func setDraftToReturn(_ draft: MemoryDraft) { draftToReturn = draft }
 
     func transcribe(
         recordingURL: URL,
         apiKey: String,
+        memoryContext: String?,
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> TranscriptionResult {
         transcribeCallCount += 1
+        lastMemoryContext = memoryContext
         progress(TranscriptionProgress(stage: .segment, currentSegment: 1, totalSegments: 1, message: "Preparing the recording…"))
         progress(TranscriptionProgress(stage: .meetingNote, currentSegment: 1, totalSegments: 1, message: "Transcript saved. Generating the meeting note…"))
         progress(TranscriptionProgress(stage: .meetingNote, currentSegment: 1, totalSegments: 1, message: "Meeting note saved."))
@@ -173,18 +265,31 @@ private actor TestTranscriptionService: MeetingTranscriptionService {
     func transcribeOnly(
         recordingURL: URL,
         apiKey: String,
+        memoryContext: String?,
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> URL {
-        recordingURL.deletingPathExtension().appendingPathExtension("txt")
+        lastMemoryContext = memoryContext
+        return recordingURL.deletingPathExtension().appendingPathExtension("txt")
     }
 
     func regenerateNote(
         transcriptURL: URL,
         recordingURL: URL,
         apiKey: String,
+        memoryContext: String?,
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> URL {
-        recordingURL.deletingPathExtension().appendingPathExtension("meeting-notes.txt")
+        lastMemoryContext = memoryContext
+        return recordingURL.deletingPathExtension().appendingPathExtension("meeting-notes.txt")
+    }
+
+    func suggestMemoryUpdates(
+        transcript: String,
+        note: String,
+        currentMemory: String,
+        apiKey: String
+    ) async throws -> MemoryDraft {
+        draftToReturn
     }
 }
 

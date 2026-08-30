@@ -6,6 +6,7 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var selectedFilter: MeetingFilter = .all
     @State private var selectedMeetingID: String?
+    @State private var isShowingGlossary = false
     @State private var renameTarget: MeetingRecord?
     @State private var deleteTarget: MeetingRecord?
     @State private var operationError: String?
@@ -34,6 +35,7 @@ struct LibraryView: View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 header
+                glossaryRow
                 statusStrip
                 Divider().overlay(AnLuongTheme.secondary(for: colorScheme).opacity(0.28))
                 content
@@ -41,7 +43,9 @@ struct LibraryView: View {
             .background(AnLuongTheme.canvas(for: colorScheme))
             .navigationSplitViewColumnWidth(min: 520, ideal: 680)
         } detail: {
-            if let selectedMeeting {
+            if isShowingGlossary {
+                GlossaryView(engine: engine)
+            } else if let selectedMeeting {
                 MeetingDetailView(
                     meeting: selectedMeeting,
                     engine: engine,
@@ -153,6 +157,42 @@ struct LibraryView: View {
         .padding(22)
     }
 
+    private var glossaryRow: some View {
+        Button {
+            selectedMeetingID = nil
+            isShowingGlossary = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "text.book.closed")
+                Text("Glossary")
+                    .font(AnLuongTypography.body(13).weight(.semibold))
+                Spacer()
+                if engine.pendingMemoryCount > 0 {
+                    Text("\(engine.pendingMemoryCount)")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(AnLuongPalette.clay))
+                        .foregroundStyle(.white)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(AnLuongTheme.secondary(for: colorScheme).opacity(0.6))
+            }
+            .foregroundStyle(isShowingGlossary ? AnLuongPalette.clay : AnLuongTheme.primary(for: colorScheme))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                isShowingGlossary ? AnLuongTheme.rowSurface(for: colorScheme, isHovering: true) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 22)
+        .padding(.bottom, 12)
+        .accessibilityHint("Shows the learned glossary, participants, and note-style preferences")
+    }
+
     private var statusStrip: some View {
         LazyVGrid(
             columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
@@ -239,7 +279,10 @@ struct LibraryView: View {
                             isSelected: selectedMeetingID == meeting.id,
                             reduceMotion: reduceMotion,
                             regenerateDisabled: engine.isTranscribing || engine.geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                            onSelect: { selectedMeetingID = meeting.id },
+                            onSelect: {
+                            isShowingGlossary = false
+                            selectedMeetingID = meeting.id
+                        },
                             onRename: { renameTarget = meeting },
                             onDelete: { deleteTarget = meeting },
                             onRegenerate: { mode in engine.regenerate(meeting: meeting, mode: mode) }

@@ -108,7 +108,7 @@ final class RecordingLibrary: ObservableObject {
     }
 
     private func artifactURLs(for meeting: MeetingRecord) -> [URL] {
-        [meeting.recordingURL, meeting.transcriptURL, meeting.meetingNoteURL].compactMap { $0 }
+        [meeting.recordingURL, meeting.transcriptURL, meeting.meetingNoteURL, meeting.correctionsURL].compactMap { $0 }
     }
 
     private func destinationURLs(for meeting: MeetingRecord, newDisplayName: String) -> [URL] {
@@ -118,6 +118,8 @@ final class RecordingLibrary: ObservableObject {
                 suffix = ".m4a"
             } else if source.lastPathComponent.hasSuffix(".meeting-notes.txt") {
                 suffix = ".meeting-notes.txt"
+            } else if source.lastPathComponent.hasSuffix(".note-corrections.json") {
+                suffix = ".note-corrections.json"
             } else {
                 suffix = ".txt"
             }
