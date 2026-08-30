@@ -40,6 +40,7 @@ public protocol MeetingTranscriptionService: Sendable {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String?,
+        glossaryCorrections: [(alias: String, canonical: String)],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> TranscriptionResult
 
@@ -47,6 +48,7 @@ public protocol MeetingTranscriptionService: Sendable {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String?,
+        glossaryCorrections: [(alias: String, canonical: String)],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> URL
 
@@ -55,6 +57,7 @@ public protocol MeetingTranscriptionService: Sendable {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String?,
+        glossaryCorrections: [(alias: String, canonical: String)],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> URL
 
@@ -109,8 +112,8 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
     private static let remoteProcessingTimeout: TimeInterval = 5 * 60
     private static let model = "gemini-3.1-flash-lite"
     private static let transcriptionPrompt = """
-    RESPONSE IN VIETNAMESE: Listen carefully to the following audio file. PROVIDE DETAIL TRANSCRIPT WITH SPEAKER DIARIZATION IN VIETNAMESE
-    Listen carefully, focus on speaker diarization, and provide a detailed transcript in Vietnamese.
+    Listen carefully to the following audio file. PROVIDE A DETAILED TRANSCRIPT WITH SPEAKER DIARIZATION, TRANSCRIBED VERBATIM IN WHATEVER LANGUAGE(S) ARE ACTUALLY SPOKEN — do not translate; transcribe each speaker's words in their original language.
+    Focus on speaker diarization and provide a detailed transcript.
     reduce the line of speech, only insert new line if new speaker start speaking.
     Focus on matching the voice to a correct speaker.
       Format:
@@ -122,53 +125,53 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
     """
 
     static func meetingNotePrompt(today: String, detailAddendum: String) -> String {
-        baseMeetingNotePrompt(today: today) + detailAddendum + "\n\nBẢN CHÉP LỜI:\n"
+        baseMeetingNotePrompt(today: today) + detailAddendum + "\n\nTRANSCRIPT:\n"
     }
 
     private static func baseMeetingNotePrompt(today: String) -> String {
         """
-    Hãy tạo ghi chú cuộc họp bằng tiếng Việt từ bản chép lời được cung cấp sau đây.
+    Create a meeting note in English from the transcript provided below.
 
-    Hãy đảm bảo nội dung tóm tắt:
-    1. Có cấu trúc rõ ràng, chia thành các phần nhỏ dễ đọc
-    2. Ngắn gọn nhưng đầy đủ thông tin quan trọng
-    3. Sử dụng văn phong chuyên nghiệp, tự nhiên, dễ hiểu
-    4. Bỏ qua các nội dung không liên quan, tập trung vào các thông tin có giá trị
+    Make sure the summary content:
+    1. Has a clear structure, divided into small, easy-to-read sections
+    2. Is concise but includes all important information
+    3. Uses a professional, natural, easy-to-understand writing style
+    4. Skips irrelevant content, focusing on valuable information
 
-    CHÚ Ý: KHÔNG TẠO THÔNG TIN MỚI, CHỈ TÓM TẮT CÁC NỘI DUNG ĐÃ ĐƯỢC THẢO LUẬN TRONG CUỘC HỌP.
-    Người dùng xác nhận ngày họp là hôm nay: \(today). Bắt buộc điền đúng ngày này vào mục **Ngày họp**, ngay cả khi transcript không nhắc đến ngày. Không thay thế bằng ngày khác trong transcript.
-    Không được đoán tên cuộc họp, người tham gia, quyết định, người phụ trách hoặc thời hạn. Nếu transcript không có thông tin, ghi rõ "Không nêu trong bản chép lời" hoặc để trống phù hợp với mẫu.
-    Giữ nguyên các điểm chưa chắc chắn, ý kiến khác nhau và việc chưa được giải quyết. Không coi nhãn SPEAKER_<number> là tên thật của một người.
+    NOTE: DO NOT CREATE NEW INFORMATION, ONLY SUMMARIZE CONTENT THAT WAS ACTUALLY DISCUSSED IN THE MEETING.
+    The user confirms the meeting date is today: \(today). You must fill in this exact date under **Meeting Date**, even if the transcript doesn't mention a date. Do not substitute a different date found in the transcript.
+    Do not guess the meeting title, participants, decisions, owners, or deadlines. If the transcript has no information, write "Not stated in the transcript" or leave it blank as appropriate for the template.
+    Preserve points that are uncertain, differing opinions, and unresolved matters. Do not treat a SPEAKER_<number> label as a person's real name.
 
-    Hãy viết tự nhiên như một người ghi biên bản chuyên nghiệp. Tránh lời mở đầu, lời chào, lời khen, lời kết chung chung, nhận xét của AI, nội dung quảng cáo, emoji và các câu không có trong transcript. Không dùng dấu gạch ngang dài hoặc dấu gạch ngang ngắn để nối câu. Không thêm phần "bước tiếp theo" nếu transcript không nêu công việc hoặc quyết định tương ứng.
+    Write naturally, like a professional meeting-minutes writer. Avoid introductions, greetings, compliments, generic closing remarks, AI commentary, promotional content, emojis, and sentences not present in the transcript. Do not use em dashes or hyphens to join sentences. Do not add a "next steps" section if the transcript doesn't state corresponding tasks or decisions.
 
-    ĐỊNH DẠNG BẮT BUỘC:
-    # [TÊN CUỘC HỌP]
-    ## Thông tin chung
-    - **Ngày họp**: \(today)
-    - **Chủ đề**: [chủ đề chính của cuộc họp]
-    - **Người tham gia**: [danh sách người tham gia nếu có thể xác định]
+    REQUIRED FORMAT:
+    # [MEETING TITLE]
+    ## General Information
+    - **Meeting Date**: \(today)
+    - **Topic**: [the meeting's main subject]
+    - **Participants**: [list of participants if identifiable]
 
-    ## Tóm tắt nội dung
-    [Tóm tắt ngắn gọn 3-5 câu về nội dung chính của cuộc họp]
+    ## Summary
+    [A concise 3-5 sentence summary of the meeting's main content]
 
-    ## Các chủ đề được thảo luận
-    1. [Chủ đề 1]
-       - [Điểm chính]
-       - [Điểm chính]
-    2. [Chủ đề 2]
-       - [Điểm chính]
-       - [Điểm chính]
+    ## Discussed Topics
+    1. [Topic 1]
+       - [Main point]
+       - [Main point]
+    2. [Topic 2]
+       - [Main point]
+       - [Main point]
 
-    ## Quyết định quan trọng
-    - [Quyết định 1]
-    - [Quyết định 2]
+    ## Key Decisions
+    - [Decision 1]
+    - [Decision 2]
 
-    ## Công việc cần thực hiện
-    - [Công việc 1] - Người phụ trách: [Tên], Deadline: [Thời hạn nếu có]
-    - [Công việc 2] - Người phụ trách: [Tên], Deadline: [Thời hạn nếu có]
+    ## Action Items
+    - [Task 1] - Owner: [Name], Deadline: [Deadline if any]
+    - [Task 2] - Owner: [Name], Deadline: [Deadline if any]
 
-    Chỉ trả về nội dung ghi chú theo đúng định dạng trên. Không thêm lời giải thích trước hoặc sau ghi chú.
+    Return only the note content in the exact format above. Don't add any explanation before or after the note.
     """
     }
     private let baseURL = URL(string: "https://generativelanguage.googleapis.com")!
@@ -191,16 +194,18 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String? = nil,
+        glossaryCorrections: [(alias: String, canonical: String)] = [],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void = { _ in }
     ) async throws -> TranscriptionResult {
         let key = try validatedAPIKey(apiKey)
         progress(TranscriptionProgress(stage: .segment, currentSegment: 0, totalSegments: 0, message: "Preparing the recording…"))
-        let (merged, totalSegments) = try await makeTranscript(
+        let (rawMerged, totalSegments) = try await makeTranscript(
             recordingURL: recordingURL,
             apiKey: key,
             memoryContext: memoryContext,
             progress: progress
         )
+        let merged = applyGlossaryCorrections(rawMerged, pairs: glossaryCorrections)
         let transcriptURL = recordingURL.deletingLastPathComponent().appendingPathComponent("transcript.txt")
         try Data(merged.utf8).write(to: transcriptURL, options: .atomic)
         progress(TranscriptionProgress(stage: .meetingNote, currentSegment: totalSegments, totalSegments: totalSegments, message: "Transcript saved. Generating the meeting note…"))
@@ -219,16 +224,18 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String? = nil,
+        glossaryCorrections: [(alias: String, canonical: String)] = [],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void = { _ in }
     ) async throws -> URL {
         let key = try validatedAPIKey(apiKey)
         progress(TranscriptionProgress(stage: .segment, currentSegment: 0, totalSegments: 0, message: "Preparing the recording…"))
-        let (merged, _) = try await makeTranscript(
+        let (rawMerged, _) = try await makeTranscript(
             recordingURL: recordingURL,
             apiKey: key,
             memoryContext: memoryContext,
             progress: progress
         )
+        let merged = applyGlossaryCorrections(rawMerged, pairs: glossaryCorrections)
         let transcriptURL = recordingURL.deletingLastPathComponent().appendingPathComponent("transcript.txt")
         try Data(merged.utf8).write(to: transcriptURL, options: .atomic)
         return transcriptURL
@@ -239,12 +246,17 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String? = nil,
+        glossaryCorrections: [(alias: String, canonical: String)] = [],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void = { _ in }
     ) async throws -> URL {
         let key = try validatedAPIKey(apiKey)
-        guard let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
-              !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let rawTranscript = try? String(contentsOf: transcriptURL, encoding: .utf8),
+              !rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw GeminiTranscriptionError.emptyTranscript(0)
+        }
+        let transcript = applyGlossaryCorrections(rawTranscript, pairs: glossaryCorrections)
+        if transcript != rawTranscript {
+            try? Data(transcript.utf8).write(to: transcriptURL, options: .atomic)
         }
         progress(TranscriptionProgress(stage: .meetingNote, currentSegment: 0, totalSegments: 0, message: "Generating the meeting note…"))
         return try await writeMeetingNote(
@@ -610,23 +622,23 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
 
     private static func memorySuggestionPrompt(transcript: String, note: String, currentMemory: String) -> String {
         """
-        Bạn đang giúp một ứng dụng ghi chú cuộc họp học thêm từ vựng và người tham gia mới.
-        Bộ nhớ hiện tại (đã xác nhận, KHÔNG đề xuất lại các mục này):
-        \(currentMemory.isEmpty ? "(trống)" : currentMemory)
+        You are helping a meeting-note app learn new vocabulary and participants.
+        Current memory (already confirmed, do NOT suggest these again):
+        \(currentMemory.isEmpty ? "(empty)" : currentMemory)
 
-        So sánh bản chép lời và ghi chú cuộc họp bên dưới với bộ nhớ hiện tại. Đề xuất TỐI ĐA 10 mục MỚI cho mỗi loại:
-        - glossary: tên riêng/dự án/thuật ngữ chuyên ngành xuất hiện rõ ràng, chưa có trong bộ nhớ.
-        - participants: tên người tham gia xuất hiện rõ ràng, chưa có trong bộ nhớ.
-        - stylePreferences: CHỈ đề xuất nếu ghi chú cho thấy một cấu trúc/định dạng lặp lại đáng chú ý.
-        - corrections: các từ/cụm từ trong GHI CHÚ CUỘC HỌP có khả năng là lỗi nhận dạng giọng nói (ASR) của một thuật ngữ hoặc tên đã có trong bộ nhớ hiện tại (kể cả các biến thể đã biết ở trên). Với mỗi lỗi, ghi rõ văn bản sai (wrongText) đúng như trong ghi chú, văn bản đúng (correctText) lấy từ bộ nhớ, và các phương án khác nếu không chắc chắn (alternatives).
-        - identityMerges: nếu nhiều tên khác nhau trong bản chép lời/ghi chú có khả năng chỉ cùng một người, đề xuất gộp lại (names, ít nhất 2 tên) và tên đầy đủ/chính thức nhất nếu xác định được (canonicalName).
+        Compare the transcript and meeting note below against the current memory. Suggest AT MOST 10 NEW entries per category:
+        - glossary: proper nouns/project names/domain-specific terms that clearly appear and aren't already in memory.
+        - participants: participant names that clearly appear and aren't already in memory.
+        - stylePreferences: ONLY suggest if the note shows a notable recurring structure/format.
+        - corrections: words/phrases in the MEETING NOTE that are likely a speech-recognition (ASR) error for a term or name already in the current memory (including the known variants listed above). For each error, give the exact wrong text as it appears in the note (wrongText), the correct text from memory (correctText), and other candidates if uncertain (alternatives).
+        - identityMerges: if multiple different names in the transcript/note likely refer to the same person, suggest merging them (names, at least 2) and the fullest/most official name if identifiable (canonicalName).
 
-        Không đoán, không suy diễn. Nếu không có mục nào đáng tin cậy cho một loại, trả về mảng rỗng cho loại đó.
+        Don't guess, don't infer. If there's no reliable entry for a category, return an empty array for it.
 
-        BẢN CHÉP LỜI:
+        TRANSCRIPT:
         \(transcript)
 
-        GHI CHÚ CUỘC HỌP:
+        MEETING NOTE:
         \(note)
         """
     }

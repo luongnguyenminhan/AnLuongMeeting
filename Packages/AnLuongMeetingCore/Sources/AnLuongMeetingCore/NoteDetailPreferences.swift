@@ -51,21 +51,21 @@ public struct NoteDetailPreferences: Codable, Equatable, Sendable {
         let trimmedExtra = extraInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
         var lines: [String] = []
         if level == .detailed {
-            lines.append("- Viết chi tiết hơn mức bình thường: giữ lại nhiều thông tin cụ thể thay vì tóm tắt quá ngắn gọn.")
+            lines.append("- Write in more detail than usual: keep specific information rather than summarizing too briefly.")
         }
         if includeQuotes {
-            lines.append("- Trích dẫn nguyên văn các câu nói quan trọng khi phù hợp, có thể ghi rõ người nói.")
+            lines.append("- Quote important statements verbatim when appropriate, attributing the speaker if known.")
         }
         if includeTechnicalDetails {
-            lines.append("- Giữ nguyên các con số, thông số kỹ thuật, tên giao thức/công cụ/thiết bị được nhắc đến chính xác như trong bản chép lời.")
+            lines.append("- Keep numbers, technical specs, and protocol/tool/device names exactly as they appear in the transcript.")
         }
         if includeMinorPoints {
-            lines.append("- Đừng bỏ qua các điểm phụ hoặc nhánh nhỏ của cuộc thảo luận; liệt kê cả những điểm ít quan trọng hơn.")
+            lines.append("- Don't skip minor points or side branches of the discussion; include less important points too.")
         }
         if !trimmedExtra.isEmpty {
             lines.append("- \(trimmedExtra)")
         }
         guard !lines.isEmpty else { return "" }
-        return "\n\nYÊU CẦU BỔ SUNG TỪ NGƯỜI DÙNG (PHẢI TUÂN THỦ NGHIÊM NGẶT, kể cả khi khác với hướng dẫn ở trên, kể cả về ngôn ngữ):\n" + lines.joined(separator: "\n")
+        return "\n\nADDITIONAL USER REQUIREMENTS (MUST BE FOLLOWED STRICTLY, even if they differ from the instructions above, including regarding language):\n" + lines.joined(separator: "\n")
     }
 }

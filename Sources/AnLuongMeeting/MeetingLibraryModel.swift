@@ -56,7 +56,7 @@ struct MeetingRecord: Identifiable, Hashable {
         duration: TimeInterval?,
         status: MeetingStatus
     ) {
-        self.id = recordingURL.standardizedFileURL.path
+        self.id = Self.stableID(for: recordingURL)
         self.displayName = displayName
         self.recordingURL = recordingURL
         self.transcriptURL = transcriptURL
@@ -65,6 +65,17 @@ struct MeetingRecord: Identifiable, Hashable {
         self.modifiedAt = modifiedAt
         self.duration = duration
         self.status = status
+    }
+
+    /// A file's `fileResourceIdentifier` survives being moved/renamed within the same volume
+    /// (it's tied to the inode, not the path), unlike the file's path itself — so a meeting
+    /// keeps the same `id` (and the library keeps its current selection) across an auto-rename
+    /// of its folder. Falls back to the path on the rare lookup failure.
+    private static func stableID(for url: URL) -> String {
+        if let identifier = try? url.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier {
+            return "\(identifier)"
+        }
+        return url.standardizedFileURL.path
     }
 }
 

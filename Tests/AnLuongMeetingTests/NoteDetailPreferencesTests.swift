@@ -21,27 +21,27 @@ final class NoteDetailPreferencesTests: XCTestCase {
     func testDetailedLevelAddsAddendumLine() {
         var prefs = NoteDetailPreferences()
         prefs.level = .detailed
-        XCTAssertTrue(prefs.promptAddendum.contains("chi tiết hơn mức bình thường"))
+        XCTAssertTrue(prefs.promptAddendum.contains("more detail than usual"))
     }
 
     func testEachToggleAddsItsOwnLine() {
         var quotes = NoteDetailPreferences()
         quotes.includeQuotes = true
-        XCTAssertTrue(quotes.promptAddendum.contains("Trích dẫn nguyên văn"))
+        XCTAssertTrue(quotes.promptAddendum.contains("Quote important statements verbatim"))
 
         var technical = NoteDetailPreferences()
         technical.includeTechnicalDetails = true
-        XCTAssertTrue(technical.promptAddendum.contains("thông số kỹ thuật"))
+        XCTAssertTrue(technical.promptAddendum.contains("technical specs"))
 
         var minor = NoteDetailPreferences()
         minor.includeMinorPoints = true
-        XCTAssertTrue(minor.promptAddendum.contains("điểm phụ"))
+        XCTAssertTrue(minor.promptAddendum.contains("minor points"))
     }
 
     func testExtraInstructionsAppearVerbatim() {
         var prefs = NoteDetailPreferences()
-        prefs.extraInstructions = "Luôn ghi rõ số tiền và đơn vị tiền tệ."
-        XCTAssertTrue(prefs.promptAddendum.contains("Luôn ghi rõ số tiền và đơn vị tiền tệ."))
+        prefs.extraInstructions = "Always state amounts with their currency."
+        XCTAssertTrue(prefs.promptAddendum.contains("Always state amounts with their currency."))
     }
 
     func testBlankExtraInstructionsAreIgnored() {
@@ -58,7 +58,7 @@ final class NoteDetailPreferencesTests: XCTestCase {
         var prefs = NoteDetailPreferences()
         prefs.level = .detailed
         prefs.includeQuotes = true
-        prefs.extraInstructions = "Nhấn mạnh các con số."
+        prefs.extraInstructions = "Emphasize the numbers."
 
         prefs.save(userDefaults: userDefaults)
 

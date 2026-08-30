@@ -16,6 +16,7 @@ struct MeetingDetailView: View {
     @State private var terms: [TermHighlight] = []
     @State private var trace: [LLMTraceEntry] = []
     @State private var isProcessingLogExpanded = false
+    @State private var isReportingCorrection = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(meeting: MeetingRecord, engine: RecordingEngine, onRename: @escaping () -> Void, onDelete: @escaping () -> Void) {
@@ -53,6 +54,11 @@ struct MeetingDetailView: View {
         } message: {
             Text(correctionError ?? "Please try again.")
         }
+        .sheet(isPresented: $isReportingCorrection) {
+            ReportCorrectionView(onSubmit: { wrongText, correctText, kind in
+                reportCorrection(wrongText: wrongText, correctText: correctText, kind: kind)
+            })
+        }
     }
 
     private var header: some View {
@@ -77,6 +83,20 @@ struct MeetingDetailView: View {
             }
 
             Spacer()
+
+            if meeting.meetingNoteURL != nil {
+                Button {
+                    isReportingCorrection = true
+                } label: {
+                    Image(systemName: "text.badge.xmark")
+                        .font(.title3)
+                        .foregroundStyle(AnLuongPalette.ivory)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Report a wrong word in this note")
+                .help("Report a word that isn't recognized or was mistranscribed")
+            }
 
             Button {
                 isActionsPopoverPresented.toggle()
@@ -439,6 +459,17 @@ struct MeetingDetailView: View {
         }
         guard !trimmed.isEmpty, trimmed != wrongText else { return }
         applyCorrectionChoice(NoteCorrection(wrongText: wrongText, correctText: trimmed, kind: kind), chosenText: trimmed)
+    }
+
+    /// Handles a word the user typed in manually via "Report a wrong word…" — for text that
+    /// isn't recognized as a term/name at all (so nothing is highlighted to tap). Reuses
+    /// `applyCorrectionChoice` so it's fixed in this note (if the text is actually present)
+    /// and promoted into memory the same way any other accepted correction is.
+    private func reportCorrection(wrongText: String, correctText: String, kind: CorrectionKind) {
+        let trimmedWrong = wrongText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCorrect = correctText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedWrong.isEmpty, !trimmedCorrect.isEmpty, trimmedWrong != trimmedCorrect else { return }
+        applyCorrectionChoice(NoteCorrection(wrongText: trimmedWrong, correctText: trimmedCorrect, kind: kind), chosenText: trimmedCorrect)
     }
 
     private enum DetailTab: Hashable {
@@ -1123,6 +1154,62 @@ private struct CorrectionPickerView: View {
         }
         .padding(16)
         .frame(width: 260)
+    }
+}
+
+/// A word/name that Gemini got wrong but that isn't recognized as a glossary term or
+/// participant at all — so nothing is highlighted in the note for the user to tap. This form
+/// is the fallback entry point: the user types the wrong text as it appears in the note and
+/// what it should say instead, and that's stored the same way a tapped-term correction is.
+private struct ReportCorrectionView: View {
+    let onSubmit: (String, String, CorrectionKind) -> Void
+    @State private var wrongText = ""
+    @State private var correctText = ""
+    @State private var kind: CorrectionKind = .glossaryTerm
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Report a wrong word").font(.headline)
+            Text("For a word or name that wasn't recognized at all — type it exactly as it appears in the note, and what it should say instead.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("As written in the note").font(.caption.weight(.semibold))
+                TextField("e.g. Serenity", text: $wrongText)
+                    .textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Correct spelling").font(.caption.weight(.semibold))
+                TextField("e.g. Celesnity", text: $correctText)
+                    .textFieldStyle(.roundedBorder)
+            }
+            Picker("Kind", selection: $kind) {
+                Text("Term / name").tag(CorrectionKind.glossaryTerm)
+                Text("Participant").tag(CorrectionKind.participantName)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                Button("Save") {
+                    onSubmit(wrongText, correctText, kind)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    wrongText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || correctText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
     }
 }
 

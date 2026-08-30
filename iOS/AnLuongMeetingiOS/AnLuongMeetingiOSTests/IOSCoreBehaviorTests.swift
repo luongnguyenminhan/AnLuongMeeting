@@ -249,6 +249,7 @@ private actor TestTranscriptionService: MeetingTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String?,
+        glossaryCorrections: [(alias: String, canonical: String)],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> TranscriptionResult {
         transcribeCallCount += 1
@@ -266,6 +267,7 @@ private actor TestTranscriptionService: MeetingTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String?,
+        glossaryCorrections: [(alias: String, canonical: String)],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> URL {
         lastMemoryContext = memoryContext
@@ -277,6 +279,7 @@ private actor TestTranscriptionService: MeetingTranscriptionService {
         recordingURL: URL,
         apiKey: String,
         memoryContext: String?,
+        glossaryCorrections: [(alias: String, canonical: String)],
         progress: @escaping @Sendable (TranscriptionProgress) -> Void
     ) async throws -> URL {
         lastMemoryContext = memoryContext

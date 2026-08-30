@@ -210,66 +210,66 @@ func withRetry<T: Sendable>(
 let spellingCorrectionInstruction = """
 
 
-QUAN TRỌNG — sửa lỗi chính tả đã biết: nếu phần hướng dẫn hệ thống liệt kê một thuật ngữ/tên riêng đã xác nhận kèm các biến thể "cũng nghe thành: ..." (ASR nghe nhầm), và bản chép lời bên dưới chứa biến thể đó, hãy viết theo đúng chính tả đã xác nhận thay vì chép lại biến thể nghe nhầm. Đây là sửa lỗi phiên âm đã biết, KHÔNG phải suy diễn hay thêm thông tin mới.
+IMPORTANT — fix known spelling errors: if the system instructions list a confirmed term/name together with variants "also heard as: ..." (ASR mishearings), and the transcript below contains one of those variants, write it using the confirmed spelling instead of copying the mishearing. This is fixing a known transcription error, NOT inferring or adding new information.
 """
 
 func decomposePrompt(transcript: String, detailAddendum: String = "") -> String {
     """
-    Bạn đang phân tích bản chép lời một cuộc họp để chuẩn bị viết ghi chú chi tiết theo từng chủ đề.
+    You are analyzing a meeting transcript to prepare a detailed, topic-by-topic note.
 
-    Đọc kỹ bản chép lời bên dưới và xác định:
-    1. Tên cuộc họp có thể suy ra được (meetingTitleGuess) — để trống nếu không rõ.
-    2. Danh sách người tham gia có thể xác định được qua tên được nhắc đến (participantsGuess).
-    3. Các chủ đề chính đã được thảo luận (topics), mỗi chủ đề gồm:
-       - title: tên ngắn gọn của chủ đề
-       - description: mô tả 1 câu về nội dung chủ đề đó
-       - richness: điểm từ 1 đến 5 đánh giá mức độ nội dung thực chất của chủ đề (kỹ thuật, quyết định, số liệu, tranh luận sâu) — 1 là chào hỏi/kiểm tra âm thanh/nói chuyện phiếm không có nội dung, 5 là thảo luận sâu, nhiều chi tiết kỹ thuật hoặc quyết định quan trọng.
+    Read the transcript below carefully and determine:
+    1. A meeting title you can infer (meetingTitleGuess) — leave blank if unclear.
+    2. A list of participants you can identify by name mentions (participantsGuess).
+    3. The main topics discussed (topics), each with:
+       - title: a short topic name
+       - description: a one-sentence description of the topic's content
+       - richness: a score from 1 to 5 rating how substantive the topic is (technical detail, decisions, figures, in-depth debate) — 1 is small talk/greetings/audio checks with no real content, 5 is deep discussion with lots of technical detail or important decisions.
 
-    Liệt kê các chủ đề theo đúng thứ tự chúng xuất hiện trong bản chép lời. Không bỏ sót chủ đề nào có nội dung thực chất, kể cả chủ đề ngắn.
+    List the topics in the order they appear in the transcript. Don't skip any topic with real substance, even a short one.
 
-    QUAN TRỌNG — tránh chủ đề trùng lặp: nếu cuộc họp quay lại thảo luận cùng một nội dung cốt lõi nhiều lần dưới các góc độ khác nhau (ví dụ: một buổi phỏng vấn nhắc đi nhắc lại cùng một kỹ năng hoặc yêu cầu), hãy gộp các đoạn đó thành MỘT chủ đề duy nhất thay vì tách thành nhiều chủ đề riêng biệt — mỗi chủ đề phải đại diện cho một nội dung thực sự khác biệt, không chồng lấn với chủ đề khác.\(spellingCorrectionInstruction)\(detailAddendum)
+    IMPORTANT — avoid duplicate topics: if the meeting returns to the same underlying subject multiple times from different angles (e.g. an interview that keeps revisiting the same skill or requirement), merge those into ONE topic instead of splitting them into separate ones — each topic must represent a genuinely distinct subject, not overlap with another.\(spellingCorrectionInstruction)\(detailAddendum)
 
-    BẢN CHÉP LỜI:
+    TRANSCRIPT:
     \(transcript)
     """
 }
 
 func explorePrompt(topic: NoteTopic, transcript: String, detailAddendum: String) -> String {
     """
-    Bạn đang đào sâu vào MỘT chủ đề cụ thể trong bản chép lời cuộc họp bên dưới, để chuẩn bị dữ liệu cho một ghi chú cuộc họp chi tiết.
+    You are digging into ONE specific topic in the meeting transcript below, to prepare data for a detailed meeting note.
 
-    CHỦ ĐỀ CẦN TẬP TRUNG: \(topic.title)
-    Mô tả ngắn: \(topic.description)
+    TOPIC TO FOCUS ON: \(topic.title)
+    Short description: \(topic.description)
 
-    Chỉ tập trung vào nội dung liên quan đến chủ đề này, bỏ qua các chủ đề khác. Mặc định viết bằng tiếng Việt (trừ khi yêu cầu bổ sung bên dưới chỉ định ngôn ngữ khác), trình bày thành các gạch đầu dòng chi tiết, bao gồm:
-    - Các điểm chính và điểm phụ đã được thảo luận về chủ đề này.
-    - Số liệu, thông số kỹ thuật, tên công cụ/thiết bị/giao thức được nhắc đến, giữ nguyên chính xác.
-    - Trích dẫn nguyên văn các câu nói quan trọng khi phù hợp, ghi rõ người nói nếu xác định được.
-    - Các điểm chưa thống nhất hoặc câu hỏi còn bỏ ngỏ liên quan đến chủ đề này.
+    Focus only on content relevant to this topic, ignoring other topics. Default to writing in English (unless the additional requirements below specify a different language), formatted as detailed bullet points, covering:
+    - The main and secondary points discussed about this topic.
+    - Figures, technical specs, and names of tools/devices/protocols mentioned, kept exactly accurate.
+    - Verbatim quotes of important statements when appropriate, attributing the speaker if identifiable.
+    - Any unresolved points or open questions related to this topic.
 
-    KHÔNG liệt kê quyết định hay việc cần làm ở đây — một bước riêng ở cuối sẽ tổng hợp quyết định và việc cần làm từ TOÀN BỘ các chủ đề, nên lặp lại chúng ở đây sẽ tạo nội dung trùng lặp trong ghi chú cuối cùng.
+    Do NOT list decisions or action items here — a separate final step will compile decisions and action items from ALL topics, so repeating them here would create duplicate content in the final note.
 
-    KHÔNG suy diễn hay thêm thông tin không có trong bản chép lời. Nếu bản chép lời không đủ chi tiết cho một mục nào đó, bỏ qua mục đó thay vì đoán. KHÔNG được thêm BẤT KỲ tiêu đề Markdown nào (#, ##, ###) ở bất kỳ đâu trong câu trả lời — kể cả tiêu đề tự đặt như "Overview", "Tóm tắt", "Quyết định" — dù bộ nhớ phong cách ghi chú bên dưới có gợi ý dùng tiêu đề cho CẢ ghi chú, điều đó KHÔNG áp dụng ở bước này. Chỉ trả về MỘT danh sách gạch đầu dòng phẳng, không heading, không mục con có tiêu đề riêng, vì tiêu đề chủ đề đã được thêm riêng vào ghi chú cuối cùng.\(spellingCorrectionInstruction)\(detailAddendum)
+    Do NOT infer or add information that isn't in the transcript. If the transcript doesn't have enough detail for a point, skip it rather than guessing. Do NOT add ANY Markdown heading (#, ##, ###) anywhere in your answer — including a heading you make up yourself like "Overview", "Summary", or "Decisions" — even if the note-style memory below suggests using headings for the WHOLE note, that does NOT apply at this step. Return ONLY a flat bullet list, no headings, no sub-items with their own titles, since the topic's own title is added separately in the final note.\(spellingCorrectionInstruction)\(detailAddendum)
 
-    BẢN CHÉP LỜI ĐẦY ĐỦ:
+    FULL TRANSCRIPT:
     \(transcript)
     """
 }
 
 func expandPrompt(topic: NoteTopic, priorFindings: String, transcript: String, detailAddendum: String) -> String {
     """
-    Bạn đã viết một bản tìm hiểu ban đầu về chủ đề "\(topic.title)" từ bản chép lời cuộc họp. Chủ đề này được đánh giá là có nhiều nội dung thực chất, vì vậy hãy viết lại bản tìm hiểu này ở mức chi tiết SÂU HƠN.
+    You wrote an initial write-up on the topic "\(topic.title)" from the meeting transcript. This topic was rated as having substantial content, so rewrite this write-up in DEEPER detail.
 
-    BẢN TÌM HIỂU BAN ĐẦU (dùng làm điểm khởi đầu, không phải bản cuối):
+    INITIAL WRITE-UP (a starting point, not the final version):
     \(priorFindings)
 
-    Đọc lại bản chép lời đầy đủ bên dưới và viết một bản tìm hiểu MỚI, đầy đủ hơn về chủ đề này — giữ lại mọi điểm đã có ở bản ban đầu, đồng thời bổ sung thêm các điểm phụ, số liệu, trích dẫn, hoặc sắc thái mà bản ban đầu chưa nêu ra. Mặc định viết bằng tiếng Việt (trừ khi yêu cầu bổ sung bên dưới chỉ định ngôn ngữ khác), gạch đầu dòng.
+    Re-read the full transcript below and write a NEW, more complete write-up on this topic — keep every point already in the initial version, while adding secondary points, figures, quotes, or nuances the initial version didn't cover. Default to writing in English (unless the additional requirements below specify a different language), as bullet points.
 
-    KHÔNG liệt kê quyết định hay việc cần làm ở đây — một bước riêng ở cuối sẽ tổng hợp quyết định và việc cần làm từ TOÀN BỘ các chủ đề, nên lặp lại chúng ở đây sẽ tạo nội dung trùng lặp trong ghi chú cuối cùng.
+    Do NOT list decisions or action items here — a separate final step will compile decisions and action items from ALL topics, so repeating them here would create duplicate content in the final note.
 
-    KHÔNG được thêm BẤT KỲ tiêu đề Markdown nào (#, ##, ###) ở bất kỳ đâu trong câu trả lời — kể cả tiêu đề tự đặt như "Overview", "Tóm tắt", "Quyết định" — dù bộ nhớ phong cách ghi chú bên dưới có gợi ý dùng tiêu đề cho CẢ ghi chú, điều đó KHÔNG áp dụng ở bước này. Chỉ trả về MỘT danh sách gạch đầu dòng phẳng, không heading, không mục con có tiêu đề riêng. Đây sẽ là bản DUY NHẤT được dùng cho chủ đề này trong ghi chú cuối cùng.\(spellingCorrectionInstruction)\(detailAddendum)
+    Do NOT add ANY Markdown heading (#, ##, ###) anywhere in your answer — including a heading you make up yourself like "Overview", "Summary", or "Decisions" — even if the note-style memory below suggests using headings for the WHOLE note, that does NOT apply at this step. Return ONLY a flat bullet list, no headings, no sub-items with their own titles. This will be the ONLY version used for this topic in the final note.\(spellingCorrectionInstruction)\(detailAddendum)
 
-    BẢN CHÉP LỜI ĐẦY ĐỦ:
+    FULL TRANSCRIPT:
     \(transcript)
     """
 }
@@ -301,16 +301,16 @@ struct SynthesisLabels: Sendable, Equatable {
     let ownerLabel: String
     let deadlineLabel: String
 
-    static let defaultVietnamese = SynthesisLabels(
-        generalInfoHeading: "Thông tin chung",
-        dateLabel: "Ngày họp",
-        topicLabel: "Chủ đề",
-        participantsLabel: "Người tham gia",
-        summaryHeading: "Tóm tắt nội dung",
-        topicsHeading: "Các chủ đề được thảo luận",
-        decisionsHeading: "Quyết định quan trọng",
-        actionItemsHeading: "Công việc cần thực hiện",
-        ownerLabel: "Người phụ trách",
+    static let defaultLabels = SynthesisLabels(
+        generalInfoHeading: "General Information",
+        dateLabel: "Meeting Date",
+        topicLabel: "Topic",
+        participantsLabel: "Participants",
+        summaryHeading: "Summary",
+        topicsHeading: "Discussed Topics",
+        decisionsHeading: "Key Decisions",
+        actionItemsHeading: "Action Items",
+        ownerLabel: "Owner",
         deadlineLabel: "Deadline"
     )
 }
@@ -382,28 +382,28 @@ func synthesizeMetadataPrompt(
     topicFindings: [(title: String, content: String)],
     detailAddendum: String
 ) -> String {
-    let titleLine = (meetingTitleGuess?.isEmpty == false) ? meetingTitleGuess! : "(không rõ, hãy tự đặt tên phù hợp)"
-    let participantsLine = participantsGuess.isEmpty ? "(không xác định được)" : participantsGuess.joined(separator: ", ")
+    let titleLine = (meetingTitleGuess?.isEmpty == false) ? meetingTitleGuess! : "(unclear, come up with a suitable name)"
+    let participantsLine = participantsGuess.isEmpty ? "(could not be determined)" : participantsGuess.joined(separator: ", ")
 
     return """
-    Bạn đang chuẩn bị phần mở đầu và kết luận cho một ghi chú cuộc họp, dựa trên các bản tìm hiểu chi tiết theo từng chủ đề bên dưới. Các bản tìm hiểu này sẽ được đưa NGUYÊN VĂN vào ghi chú cuối cùng — bạn KHÔNG cần và KHÔNG được viết lại hay tóm tắt chúng.
+    You are preparing the opening and closing sections for a meeting note, based on the detailed topic-by-topic write-ups below. These write-ups will be pasted VERBATIM into the final note — you do NOT need to, and must NOT, rewrite or summarize them.
 
-    Tên cuộc họp gợi ý: \(titleLine)
-    Người tham gia gợi ý: \(participantsLine)
-    Người dùng xác nhận ngày họp là hôm nay: \(today).
+    Suggested meeting title: \(titleLine)
+    Suggested participants: \(participantsLine)
+    The user confirms the meeting date is today: \(today).
 
-    Dựa trên nội dung các bản tìm hiểu, hãy cung cấp:
-    - meetingTitle: tên cuộc họp phù hợp.
-    - topicSentence: một câu mô tả chủ đề chính của cuộc họp.
-    - participants: danh sách người tham gia (dùng danh sách gợi ý nếu hợp lý, bổ sung nếu bản tìm hiểu nêu rõ thêm).
-    - summary: đoạn tóm tắt 3-5 câu về nội dung chính của cuộc họp.
-    - decisions: danh sách các quyết định quan trọng được đề cập trong bất kỳ bản tìm hiểu nào (mảng rỗng nếu không có).
-    - actionItems: danh sách công việc cần thực hiện được đề cập (mỗi mục gồm task, và owner/deadline nếu có nêu; mảng rỗng nếu không có).
-    - labels: các nhãn tiêu đề dùng cho ghi chú cuối cùng — generalInfoHeading, dateLabel, topicLabel, participantsLabel, summaryHeading, topicsHeading, decisionsHeading, actionItemsHeading, ownerLabel, deadlineLabel. Mặc định bằng tiếng Việt (ví dụ "Thông tin chung", "Ngày họp", "Chủ đề", "Người tham gia", "Tóm tắt nội dung", "Các chủ đề được thảo luận", "Quyết định quan trọng", "Công việc cần thực hiện", "Người phụ trách", "Deadline"), TRỪ KHI yêu cầu bổ sung bên dưới chỉ định một ngôn ngữ khác — khi đó hãy dịch các nhãn này VÀ mọi trường text ở trên sang đúng ngôn ngữ được yêu cầu.
+    Based on the write-ups' content, provide:
+    - meetingTitle: a suitable meeting title.
+    - topicSentence: one sentence describing the meeting's main subject.
+    - participants: a list of participants (use the suggested list if reasonable, add more if the write-ups clearly name others).
+    - summary: a 3-5 sentence summary of the meeting's main content.
+    - decisions: a list of important decisions mentioned in any write-up (empty array if none).
+    - actionItems: a list of action items mentioned (each with task, and owner/deadline if stated; empty array if none).
+    - labels: the heading labels used in the final note — generalInfoHeading, dateLabel, topicLabel, participantsLabel, summaryHeading, topicsHeading, decisionsHeading, actionItemsHeading, ownerLabel, deadlineLabel. Default to English (e.g. "General Information", "Meeting Date", "Topic", "Participants", "Summary", "Discussed Topics", "Key Decisions", "Action Items", "Owner", "Deadline"), UNLESS the additional requirements below specify a different language — in that case translate these labels AND every text field above into that requested language.
 
-    Không suy diễn thông tin không có trong các bản tìm hiểu. Không coi nhãn SPEAKER_<number> là tên thật của một người.\(spellingCorrectionInstruction)\(detailAddendum)
+    Do not infer information that isn't in the write-ups. Do not treat a SPEAKER_<number> label as a person's real name.\(spellingCorrectionInstruction)\(detailAddendum)
 
-    CÁC BẢN TÌM HIỂU THEO CHỦ ĐỀ:
+    TOPIC WRITE-UPS:
     \(topicFindingsBlock(topicFindings))
     """
 }
@@ -442,7 +442,7 @@ func parseSynthesisMetadata(from json: Data) -> SynthesisMetadata? {
         guard let task = item.task, !task.isEmpty else { return nil }
         return SynthesisActionItem(task: task, owner: item.owner, deadline: item.deadline)
     }
-    let defaults = SynthesisLabels.defaultVietnamese
+    let defaults = SynthesisLabels.defaultLabels
     let rawLabels = raw.labels
     let labels = SynthesisLabels(
         generalInfoHeading: rawLabels?.generalInfoHeading ?? defaults.generalInfoHeading,
@@ -672,7 +672,7 @@ extension GeminiTranscriptionService {
                 summary: "",
                 decisions: [],
                 actionItems: [],
-                labels: .defaultVietnamese
+                labels: .defaultLabels
             )
         }
         return assembleFinalNote(today: meetingDate, metadata: metadata, topicFindings: findings)

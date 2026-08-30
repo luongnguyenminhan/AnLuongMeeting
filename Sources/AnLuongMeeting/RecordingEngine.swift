@@ -324,6 +324,7 @@ final class RecordingEngine: ObservableObject {
         let glossaryCorrections = memory.glossaryCorrectionPairs()
         let recorder = LLMTraceRecorder()
         transcriptionTask = Task { @MainActor [weak self] in
+            var currentRecordingURL = recordingURL
             do {
                 let result = try await service.transcribe(
                     recordingURL: recordingURL,
@@ -350,16 +351,23 @@ final class RecordingEngine: ObservableObject {
                     },
                     trace: recorder.asTraceFunction()
                 )
-                guard !Task.isCancelled else { return }
-                self?.transcriptionState = .completed(
+                guard !Task.isCancelled, let self else { return }
+                let renamed = self.autoRenameFromNoteTitle(
+                    recordingURL: currentRecordingURL,
                     transcriptURL: result.transcriptURL,
                     meetingNoteURL: result.meetingNoteURL
                 )
-                self?.refreshMemorySuggestions(transcriptURL: result.transcriptURL, meetingNoteURL: result.meetingNoteURL, apiKey: key)
-                self?.isTranscribing = false
-                self?.transcriptionTask = nil
-                self?.processingRecordingURL = nil
-                self?.notifyLibraryChanged()
+                currentRecordingURL = renamed.recordingURL
+                if currentRecordingURL != recordingURL { self.progressLogRecordingURL = currentRecordingURL }
+                self.transcriptionState = .completed(
+                    transcriptURL: renamed.transcriptURL,
+                    meetingNoteURL: renamed.meetingNoteURL
+                )
+                self.refreshMemorySuggestions(transcriptURL: renamed.transcriptURL, meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
+                self.isTranscribing = false
+                self.transcriptionTask = nil
+                self.processingRecordingURL = nil
+                self.notifyLibraryChanged()
             } catch is CancellationError {
                 self?.transcriptionState = .idle
                 self?.isTranscribing = false
@@ -374,7 +382,7 @@ final class RecordingEngine: ObservableObject {
                 self?.notifyLibraryChanged()
                 Log.write("Gemini transcription or meeting note failed — \(error.localizedDescription)")
             }
-            try? LLMTraceStore(directory: recordingURL.deletingLastPathComponent()).save(await recorder.entries)
+            try? LLMTraceStore(directory: currentRecordingURL.deletingLastPathComponent()).save(await recorder.entries)
             self?.lastTraceRefreshToken = UUID()
         }
     }
@@ -488,6 +496,71 @@ final class RecordingEngine: ObservableObject {
         try? store.save(merged)
     }
 
+    /// If this meeting still has its auto-generated `yyyy-MM-dd_HHmmss` folder name, renames
+    /// it to match the title Gemini gave the note — so meetings show up in the library named
+    /// for what they're actually about instead of just when they were recorded. Never touches
+    /// a folder that's already been renamed (by this or by the user), since that's the only
+    /// reliable signal available for "don't clobber a name someone chose on purpose."
+    private func autoRenameFromNoteTitle(
+        recordingURL: URL, transcriptURL: URL, meetingNoteURL: URL
+    ) -> (recordingURL: URL, transcriptURL: URL, meetingNoteURL: URL) {
+        let unchanged = (recordingURL, transcriptURL, meetingNoteURL)
+        let folder = recordingURL.deletingLastPathComponent()
+        guard Self.looksLikeDefaultMeetingName(folder.lastPathComponent),
+              let note = try? String(contentsOf: meetingNoteURL, encoding: .utf8),
+              let title = Self.titleFromNote(note) else {
+            return unchanged
+        }
+        let sanitized = Self.sanitizedFolderName(from: title)
+        guard !sanitized.isEmpty, sanitized != folder.lastPathComponent else { return unchanged }
+
+        let destination = Self.uniqueFolder(named: sanitized, in: recordingsDirectory)
+        do {
+            try FileManager.default.moveItem(at: folder, to: destination)
+            return (
+                destination.appendingPathComponent(recordingURL.lastPathComponent),
+                destination.appendingPathComponent(transcriptURL.lastPathComponent),
+                destination.appendingPathComponent(meetingNoteURL.lastPathComponent)
+            )
+        } catch {
+            Log.write("auto-rename meeting folder failed — \(error.localizedDescription)")
+            return unchanged
+        }
+    }
+
+    private static func looksLikeDefaultMeetingName(_ name: String) -> Bool {
+        name.range(of: #"^\d{4}-\d{2}-\d{2}_\d{6}$"#, options: .regularExpression) != nil
+    }
+
+    /// The generated note's title is always the first line, as `# Title` (see
+    /// `assembleFinalNote`). Falls back to nil rather than guessing if that's ever not so.
+    private static func titleFromNote(_ note: String) -> String? {
+        guard let firstLine = note.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first else {
+            return nil
+        }
+        let trimmed = firstLine.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("# ") else { return nil }
+        return String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func sanitizedFolderName(from title: String) -> String {
+        let cleaned = title
+            .components(separatedBy: CharacterSet(charactersIn: "/\\:"))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(cleaned.prefix(120))
+    }
+
+    private static func uniqueFolder(named name: String, in directory: URL) -> URL {
+        var candidate = directory.appendingPathComponent(name, isDirectory: true)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(name) (\(suffix))", isDirectory: true)
+            suffix += 1
+        }
+        return candidate
+    }
+
     private func alertSystemAudioFailure() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
@@ -553,6 +626,7 @@ final class RecordingEngine: ObservableObject {
         let recorder = LLMTraceRecorder()
 
         transcriptionTask = Task { @MainActor [weak self] in
+            var currentRecordingURL = recordingURL
             do {
                 switch mode {
                 case .transcriptOnly:
@@ -603,12 +677,19 @@ final class RecordingEngine: ObservableObject {
                         },
                         trace: recorder.asTraceFunction()
                     )
-                    guard !Task.isCancelled else { return }
-                    self?.transcriptionState = .completed(
+                    guard !Task.isCancelled, let self else { return }
+                    let renamed = self.autoRenameFromNoteTitle(
+                        recordingURL: currentRecordingURL,
                         transcriptURL: transcriptURL,
                         meetingNoteURL: noteURL
                     )
-                    self?.refreshMemorySuggestions(transcriptURL: transcriptURL, meetingNoteURL: noteURL, apiKey: key)
+                    currentRecordingURL = renamed.recordingURL
+                    if currentRecordingURL != recordingURL { self.progressLogRecordingURL = currentRecordingURL }
+                    self.transcriptionState = .completed(
+                        transcriptURL: renamed.transcriptURL,
+                        meetingNoteURL: renamed.meetingNoteURL
+                    )
+                    self.refreshMemorySuggestions(transcriptURL: renamed.transcriptURL, meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
 
                 case .both:
                     self?.transcriptionState = .processing(current: 0, total: 0)
@@ -637,12 +718,19 @@ final class RecordingEngine: ObservableObject {
                         },
                         trace: recorder.asTraceFunction()
                     )
-                    guard !Task.isCancelled else { return }
-                    self?.transcriptionState = .completed(
+                    guard !Task.isCancelled, let self else { return }
+                    let renamed = self.autoRenameFromNoteTitle(
+                        recordingURL: currentRecordingURL,
                         transcriptURL: result.transcriptURL,
                         meetingNoteURL: result.meetingNoteURL
                     )
-                    self?.refreshMemorySuggestions(transcriptURL: result.transcriptURL, meetingNoteURL: result.meetingNoteURL, apiKey: key)
+                    currentRecordingURL = renamed.recordingURL
+                    if currentRecordingURL != recordingURL { self.progressLogRecordingURL = currentRecordingURL }
+                    self.transcriptionState = .completed(
+                        transcriptURL: renamed.transcriptURL,
+                        meetingNoteURL: renamed.meetingNoteURL
+                    )
+                    self.refreshMemorySuggestions(transcriptURL: renamed.transcriptURL, meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
                 }
 
                 self?.isTranscribing = false
@@ -663,7 +751,7 @@ final class RecordingEngine: ObservableObject {
                 self?.notifyLibraryChanged()
                 Log.write("regeneration failed — \(error.localizedDescription)")
             }
-            try? LLMTraceStore(directory: recordingURL.deletingLastPathComponent()).save(await recorder.entries)
+            try? LLMTraceStore(directory: currentRecordingURL.deletingLastPathComponent()).save(await recorder.entries)
             self?.lastTraceRefreshToken = UUID()
         }
     }

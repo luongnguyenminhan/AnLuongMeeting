@@ -326,7 +326,7 @@ final class NoteResearchTreeTests: XCTestCase {
 
         let metadata = parseSynthesisMetadata(from: json)
 
-        XCTAssertEqual(metadata?.labels, SynthesisLabels.defaultVietnamese)
+        XCTAssertEqual(metadata?.labels, SynthesisLabels.defaultLabels)
     }
 
     func testParseSynthesisMetadataReturnsNilWhenTitleMissing() {
@@ -345,7 +345,7 @@ final class NoteResearchTreeTests: XCTestCase {
             summary: "unique-summary-text",
             decisions: ["unique-decision-text"],
             actionItems: [SynthesisActionItem(task: "unique-task-text", owner: "An", deadline: "Friday")],
-            labels: .defaultVietnamese
+            labels: .defaultLabels
         )
         let topicFindings = [(title: "PCB design", content: "unique-verbatim-topic-content-with-lots-of-detail")]
 
@@ -356,7 +356,7 @@ final class NoteResearchTreeTests: XCTestCase {
         XCTAssertTrue(note.contains("unique-decision-text"))
         XCTAssertTrue(note.contains("unique-task-text"))
         XCTAssertTrue(note.contains("# Weekly Sync"))
-        XCTAssertTrue(note.contains("## Thông tin chung"))
+        XCTAssertTrue(note.contains("## General Information"))
     }
 
     func testAssembleFinalNoteUsesCustomLabelsWhenProvided() {
@@ -386,6 +386,6 @@ final class NoteResearchTreeTests: XCTestCase {
 
         XCTAssertTrue(note.contains("## General Info"))
         XCTAssertTrue(note.contains("## Topics Discussed"))
-        XCTAssertFalse(note.contains("Thông tin chung"))
+        XCTAssertFalse(note.contains("## General Information"))
     }
 }

@@ -274,13 +274,13 @@ extension MemoryData {
 
         var lines: [String] = []
         if !topParticipants.isEmpty {
-            lines.append("Người tham gia thường gặp: " + topParticipants.map(participantLine).joined(separator: ", "))
+            lines.append("Frequently seen participants: " + topParticipants.map(participantLine).joined(separator: ", "))
         }
         if !topGlossary.isEmpty {
-            lines.append("Thuật ngữ/tên riêng cần đánh vần chính xác: " + topGlossary.map(glossaryLine).joined(separator: ", "))
+            lines.append("Terms/proper nouns that must be spelled correctly: " + topGlossary.map(glossaryLine).joined(separator: ", "))
         }
         if !topStyles.isEmpty {
-            lines.append("Ghi chú phong cách đã học: " + topStyles.map(\.note).joined(separator: "; "))
+            lines.append("Learned style notes: " + topStyles.map(\.note).joined(separator: "; "))
         }
         return lines.joined(separator: "\n")
     }

@@ -164,7 +164,9 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         lastMode = mode
         activeRecordingURL = record.recordingURL
         errorMessage = nil
-        let memoryContext = memoryStore.load().renderForPrompt()
+        let memory = memoryStore.load()
+        let memoryContext = memory.renderForPrompt()
+        let glossaryCorrections = memory.glossaryCorrectionPairs()
         do {
             switch mode {
             case .transcriptOnly:
@@ -174,6 +176,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                     recordingURL: record.recordingURL,
                     apiKey: apiKey,
                     memoryContext: memoryContext,
+                    glossaryCorrections: glossaryCorrections,
                     progress: progressHandler(for: mode)
                 )
                 notifications.notifyTranscriptReady()
@@ -188,6 +191,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                     recordingURL: record.recordingURL,
                     apiKey: apiKey,
                     memoryContext: memoryContext,
+                    glossaryCorrections: glossaryCorrections,
                     progress: progressHandler(for: mode)
                 )
                 await refreshMemory(transcriptURL: transcriptURL, meetingNoteURL: noteURL, apiKey: apiKey)
@@ -198,6 +202,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                     recordingURL: record.recordingURL,
                     apiKey: apiKey,
                     memoryContext: memoryContext,
+                    glossaryCorrections: glossaryCorrections,
                     progress: progressHandler(for: mode)
                 )
                 await refreshMemory(transcriptURL: result.transcriptURL, meetingNoteURL: result.meetingNoteURL, apiKey: apiKey)
