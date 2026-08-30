@@ -14,134 +14,135 @@ struct GlossaryView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                summaryRow
-                backfillRow
-            } footer: {
-                Text("AnLuong Meeting learns names, project/jargon terms, and note-style preferences from your meetings, then reuses them to correct future transcripts and notes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        ScrollView {
+            Form {
+                Section {
+                    summaryRow
+                    backfillRow
+                } footer: {
+                    Text("AnLuong Meeting learns names, project/jargon terms, and note-style preferences from your meetings, then reuses them to correct future transcripts and notes.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-            Section {
-                if memory.glossary.isEmpty {
-                    emptyRow("No terms yet — add one below, or generate from past meetings above.")
-                }
-                ForEach(memory.glossary) { entry in
-                    row(
-                        title: entry.term,
-                        confirmed: entry.confirmed,
-                        snippet: entry.snippet,
-                        detail: entry.confirmed ? "\(entry.category == .project ? "Project" : "Jargon") · used \(entry.usageCount)× · \(relative(entry.lastUsedAt))" : nil,
-                        onAccept: entry.confirmed ? nil : { memory.acceptGlossary(id: entry.id); persist() },
-                        onReject: entry.confirmed ? nil : { memory.rejectGlossary(id: entry.id); persist() },
-                        onDelete: entry.confirmed ? { memory.glossary.removeAll { $0.id == entry.id }; persist() } : nil
-                    )
-                }
-                HStack {
-                    TextField("Add a term", text: $newTerm)
-                    Picker("", selection: $newCategory) {
-                        Text("Project").tag(GlossaryCategory.project)
-                        Text("Jargon").tag(GlossaryCategory.jargon)
+                Section {
+                    if memory.glossary.isEmpty {
+                        emptyRow("No terms yet — add one below, or generate from past meetings above.")
                     }
-                    .labelsHidden()
-                    .frame(width: 100)
-                    Button("Add") { addGlossary() }
-                        .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            } header: {
-                Text("Terms & names")
-            } footer: {
-                Text("Proper nouns and jargon Gemini tends to mishear or misspell. Corrected spellings are reused as a spelling guide on every future transcription and note.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                if memory.participants.isEmpty {
-                    emptyRow("No recurring participants yet.")
-                }
-                ForEach(memory.participants) { participant in
-                    VStack(alignment: .leading, spacing: 4) {
+                    ForEach(memory.glossary) { entry in
                         row(
-                            title: participant.name,
-                            confirmed: participant.confirmed,
-                            snippet: participant.snippet,
-                            detail: participant.confirmed ? "\(participant.meetingCount) meeting\(participant.meetingCount == 1 ? "" : "s") · \(relative(participant.lastSeenAt))" : nil,
-                            onAccept: participant.confirmed ? nil : { memory.acceptParticipant(id: participant.id); persist() },
-                            onReject: participant.confirmed ? nil : { memory.rejectParticipant(id: participant.id); persist() },
-                            onDelete: participant.confirmed ? { memory.participants.removeAll { $0.id == participant.id }; persist() } : nil
+                            title: entry.term,
+                            confirmed: entry.confirmed,
+                            snippet: entry.snippet,
+                            detail: entry.confirmed ? "\(entry.category == .project ? "Project" : "Jargon") · used \(entry.usageCount)× · \(relative(entry.lastUsedAt))" : nil,
+                            onAccept: entry.confirmed ? nil : { memory.acceptGlossary(id: entry.id); persist() },
+                            onReject: entry.confirmed ? nil : { memory.rejectGlossary(id: entry.id); persist() },
+                            onDelete: entry.confirmed ? { memory.glossary.removeAll { $0.id == entry.id }; persist() } : nil
                         )
-                        if participant.confirmed {
-                            let others = memory.participants.filter { $0.id != participant.id && $0.confirmed }
-                            if !others.isEmpty {
-                                Menu("Merge into…") {
-                                    ForEach(others) { other in
-                                        Button(other.name) {
-                                            memory.mergeParticipants(primaryID: other.id, absorbing: participant.id)
-                                            persist()
+                    }
+                    HStack {
+                        TextField("Add a term", text: $newTerm)
+                        Picker("", selection: $newCategory) {
+                            Text("Project").tag(GlossaryCategory.project)
+                            Text("Jargon").tag(GlossaryCategory.jargon)
+                        }
+                        .labelsHidden()
+                        .frame(width: 100)
+                        Button("Add") { addGlossary() }
+                            .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("Terms & names")
+                } footer: {
+                    Text("Proper nouns and jargon Gemini tends to mishear or misspell. Corrected spellings are reused as a spelling guide on every future transcription and note.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    if memory.participants.isEmpty {
+                        emptyRow("No recurring participants yet.")
+                    }
+                    ForEach(memory.participants) { participant in
+                        VStack(alignment: .leading, spacing: 4) {
+                            row(
+                                title: participant.name,
+                                confirmed: participant.confirmed,
+                                snippet: participant.snippet,
+                                detail: participant.confirmed ? "\(participant.meetingCount) meeting\(participant.meetingCount == 1 ? "" : "s") · \(relative(participant.lastSeenAt))" : nil,
+                                onAccept: participant.confirmed ? nil : { memory.acceptParticipant(id: participant.id); persist() },
+                                onReject: participant.confirmed ? nil : { memory.rejectParticipant(id: participant.id); persist() },
+                                onDelete: participant.confirmed ? { memory.participants.removeAll { $0.id == participant.id }; persist() } : nil
+                            )
+                            if participant.confirmed {
+                                let others = memory.participants.filter { $0.id != participant.id && $0.confirmed }
+                                if !others.isEmpty {
+                                    Menu("Merge into…") {
+                                        ForEach(others) { other in
+                                            Button(other.name) {
+                                                memory.mergeParticipants(primaryID: other.id, absorbing: participant.id)
+                                                persist()
+                                            }
                                         }
                                     }
+                                    .font(.caption)
                                 }
-                                .font(.caption)
                             }
                         }
                     }
+                    HStack {
+                        TextField("Add a participant", text: $newParticipant)
+                        Button("Add") { addParticipant() }
+                            .disabled(newParticipant.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("Participants")
+                } footer: {
+                    Text("People who show up across meetings, so notes reference them consistently.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                HStack {
-                    TextField("Add a participant", text: $newParticipant)
-                    Button("Add") { addParticipant() }
-                        .disabled(newParticipant.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            } header: {
-                Text("Participants")
-            } footer: {
-                Text("People who show up across meetings, so notes reference them consistently.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
-            Section {
-                if memory.pendingMerges.isEmpty {
-                    emptyRow("No possible duplicate people detected.")
+                Section {
+                    if memory.pendingMerges.isEmpty {
+                        emptyRow("No possible duplicate people detected.")
+                    }
+                    ForEach(memory.pendingMerges) { suggestion in
+                        mergeSuggestionRow(suggestion)
+                    }
+                } header: {
+                    Text("Possible duplicate people")
+                } footer: {
+                    Text("Gemini noticed these names might all refer to the same person. Pick which name to keep.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                ForEach(memory.pendingMerges) { suggestion in
-                    mergeSuggestionRow(suggestion)
-                }
-            } header: {
-                Text("Possible duplicate people")
-            } footer: {
-                Text("Gemini noticed these names might all refer to the same person. Pick which name to keep.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
-            Section {
-                if memory.stylePreferences.isEmpty {
-                    emptyRow("No learned style preferences yet.")
+                Section {
+                    if memory.stylePreferences.isEmpty {
+                        emptyRow("No learned style preferences yet.")
+                    }
+                    ForEach(memory.stylePreferences) { style in
+                        row(
+                            title: style.note,
+                            confirmed: style.confirmed,
+                            snippet: style.snippet,
+                            detail: nil,
+                            onAccept: style.confirmed ? nil : { memory.acceptStyle(id: style.id); persist() },
+                            onReject: style.confirmed ? nil : { memory.rejectStyle(id: style.id); persist() },
+                            onDelete: style.confirmed ? { memory.stylePreferences.removeAll { $0.id == style.id }; persist() } : nil
+                        )
+                    }
+                } header: {
+                    Text("Note style")
+                } footer: {
+                    Text("Recurring formatting or structure preferences noticed across your meeting notes.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                ForEach(memory.stylePreferences) { style in
-                    row(
-                        title: style.note,
-                        confirmed: style.confirmed,
-                        snippet: style.snippet,
-                        detail: nil,
-                        onAccept: style.confirmed ? nil : { memory.acceptStyle(id: style.id); persist() },
-                        onReject: style.confirmed ? nil : { memory.rejectStyle(id: style.id); persist() },
-                        onDelete: style.confirmed ? { memory.stylePreferences.removeAll { $0.id == style.id }; persist() } : nil
-                    )
-                }
-            } header: {
-                Text("Note style")
-            } footer: {
-                Text("Recurring formatting or structure preferences noticed across your meeting notes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            .formStyle(.grouped)
         }
-        .padding()
-        .frame(minWidth: 460, minHeight: 560)
         .onChange(of: engine.isBackfillingMemory) { _, isRunning in
             if !isRunning { memory = engine.memoryStore.load() }
         }
