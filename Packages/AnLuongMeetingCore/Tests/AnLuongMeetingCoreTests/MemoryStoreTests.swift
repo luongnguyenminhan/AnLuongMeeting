@@ -218,12 +218,12 @@ final class MemoryStoreTests: XCTestCase {
     }
 
     func testNoteCorrectionStoreLoadReturnsEmptyWhenMissing() {
-        let store = NoteCorrectionStore(directory: directory, baseName: "Planning")
+        let store = NoteCorrectionStore(directory: directory)
         XCTAssertTrue(store.load().isEmpty)
     }
 
     func testNoteCorrectionStoreSaveThenLoadRoundTrips() throws {
-        let store = NoteCorrectionStore(directory: directory, baseName: "Planning")
+        let store = NoteCorrectionStore(directory: directory)
         let corrections = [
             NoteCorrection(wrongText: "Celesnet", correctText: "Celesnity", alternatives: ["Celestity"], kind: .glossaryTerm)
         ]

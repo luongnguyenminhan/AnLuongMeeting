@@ -4,8 +4,8 @@ struct NoteCorrectionStore: Sendable {
     private let fileURL: URL
     private let fileManager: FileManager
 
-    init(directory: URL, baseName: String, fileManager: FileManager = .default) {
-        self.fileURL = directory.appendingPathComponent(baseName + ".note-corrections.json")
+    init(directory: URL, fileManager: FileManager = .default) {
+        self.fileURL = directory.appendingPathComponent("corrections.json")
         self.fileManager = fileManager
     }
 

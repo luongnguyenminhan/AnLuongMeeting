@@ -51,7 +51,9 @@ final class IOSRecordingCoordinator: ObservableObject {
             try audioSession.activate()
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd_HHmmss"
-            let url = storage.recordingsDirectory.appendingPathComponent("\(formatter.string(from: Date())).m4a")
+            let meetingFolder = storage.recordingsDirectory.appendingPathComponent(formatter.string(from: Date()), isDirectory: true)
+            try FileManager.default.createDirectory(at: meetingFolder, withIntermediateDirectories: true)
+            let url = meetingFolder.appendingPathComponent("recording.m4a")
             let writer = IOSAudioFileWriter(outputURL: url)
             try recorder.start(writer: writer)
             self.writer = writer

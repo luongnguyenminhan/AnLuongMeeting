@@ -45,23 +45,16 @@ final class RecordingLibrary: ObservableObject {
                 return
             }
 
-            let existingURLs = artifactURLs(for: meeting)
-            try validateDirectChildren(existingURLs)
+            let sourceFolder = meeting.recordingURL.deletingLastPathComponent()
+            try validateDirectChild(sourceFolder)
+            let destinationFolder = directory.appendingPathComponent(trimmedName, isDirectory: true)
+            guard !fileManager.fileExists(atPath: destinationFolder.path) else {
+                throw MeetingLibraryError.nameAlreadyExists(trimmedName)
+            }
 
-            let destinationURLs = destinationURLs(for: meeting, newDisplayName: trimmedName)
-            try validateDirectChildren(destinationURLs)
-            try validateDestinationsAreAvailable(destinationURLs, existingURLs: existingURLs)
-
-            var completedMoves: [(source: URL, destination: URL)] = []
             do {
-                for (source, destination) in zip(existingURLs, destinationURLs) {
-                    try fileManager.moveItem(at: source, to: destination)
-                    completedMoves.append((source: source, destination: destination))
-                }
+                try fileManager.moveItem(at: sourceFolder, to: destinationFolder)
             } catch {
-                for move in completedMoves.reversed() {
-                    try? fileManager.moveItem(at: move.destination, to: move.source)
-                }
                 throw MeetingLibraryError.renameFailed(error.localizedDescription)
             }
 
@@ -78,12 +71,10 @@ final class RecordingLibrary: ObservableObject {
         isMutating = true
         defer { isMutating = false }
 
-        let targets = artifactURLs(for: meeting)
+        let folder = meeting.recordingURL.deletingLastPathComponent()
         do {
-            try validateDirectChildren(targets)
-            for target in targets where fileManager.fileExists(atPath: target.path) {
-                try fileManager.removeItem(at: target)
-            }
+            try validateDirectChild(folder)
+            try fileManager.removeItem(at: folder)
             errorMessage = nil
             refresh(processingURL: processingURL)
         } catch {
@@ -107,45 +98,10 @@ final class RecordingLibrary: ObservableObject {
         return name
     }
 
-    private func artifactURLs(for meeting: MeetingRecord) -> [URL] {
-        [meeting.recordingURL, meeting.transcriptURL, meeting.meetingNoteURL, meeting.correctionsURL].compactMap { $0 }
-    }
-
-    private func destinationURLs(for meeting: MeetingRecord, newDisplayName: String) -> [URL] {
-        artifactURLs(for: meeting).map { source in
-            let suffix: String
-            if source.pathExtension.lowercased() == "m4a" {
-                suffix = ".m4a"
-            } else if source.lastPathComponent.hasSuffix(".meeting-notes.txt") {
-                suffix = ".meeting-notes.txt"
-            } else if source.lastPathComponent.hasSuffix(".note-corrections.json") {
-                suffix = ".note-corrections.json"
-            } else {
-                suffix = ".txt"
-            }
-            return directory.appendingPathComponent(newDisplayName + suffix)
-        }
-    }
-
-    private func validateDirectChildren(_ urls: [URL]) throws {
+    private func validateDirectChild(_ url: URL) throws {
         let directoryPath = directory.standardizedFileURL.path
-        for url in urls {
-            let standardized = url.standardizedFileURL
-            guard standardized.deletingLastPathComponent().path == directoryPath else {
-                throw MeetingLibraryError.unsafeTarget(url)
-            }
-        }
-    }
-
-    private func validateDestinationsAreAvailable(
-        _ destinations: [URL],
-        existingURLs: [URL]
-    ) throws {
-        let existingPaths = Set(existingURLs.map { $0.standardizedFileURL.path })
-        for destination in destinations where fileManager.fileExists(atPath: destination.path) {
-            guard existingPaths.contains(destination.standardizedFileURL.path) else {
-                throw MeetingLibraryError.nameAlreadyExists(destination.deletingPathExtension().lastPathComponent)
-            }
+        guard url.standardizedFileURL.deletingLastPathComponent().path == directoryPath else {
+            throw MeetingLibraryError.unsafeTarget(url)
         }
     }
 }

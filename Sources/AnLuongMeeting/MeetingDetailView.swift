@@ -33,6 +33,7 @@ struct MeetingDetailView: View {
         .background(AnLuongPalette.readingSurface)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { loadCorrections() }
+        .onChange(of: engine.lastMemoryRefreshToken) { _, _ in loadCorrections() }
         .onChange(of: meeting.id) { _, _ in
             selectedTab = meeting.meetingNoteURL != nil ? .meetingNote : .transcript
             loadCorrections()
@@ -274,8 +275,7 @@ struct MeetingDetailView: View {
 
     private func loadCorrections() {
         guard let noteURL = meeting.meetingNoteURL else { corrections = []; return }
-        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
-        corrections = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName).load()
+        corrections = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent()).load()
     }
 
     private func applyCorrectionChoice(_ correction: NoteCorrection, chosenText: String?) {
@@ -306,8 +306,7 @@ struct MeetingDetailView: View {
                 updatedCorrection.status = .keptOriginal
             }
 
-            let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
-            let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
+            let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent())
             var all = store.load()
             if let index = all.firstIndex(where: { $0.id == correction.id }) {
                 all[index] = updatedCorrection

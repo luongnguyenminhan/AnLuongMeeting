@@ -10,16 +10,9 @@ final class MeetingLibraryModelTests: XCTestCase {
             .appendingPathComponent("AnLuongTests-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: fixtureDirectory, withIntermediateDirectories: true)
 
-        for name in [
-            "product-sync.m4a",
-            "product-sync.txt",
-            "product-sync.meeting-notes.txt",
-            "partial.m4a",
-            "partial.txt",
-            "unrelated.txt"
-        ] {
-            try Data(name.utf8).write(to: fixtureDirectory.appendingPathComponent(name))
-        }
+        try makeFolderMeeting(named: "product-sync", transcript: true, note: true)
+        try makeFolderMeeting(named: "partial", transcript: true)
+        try Data("unrelated".utf8).write(to: fixtureDirectory.appendingPathComponent("unrelated.txt"))
     }
 
     override func tearDownWithError() throws {
@@ -28,7 +21,16 @@ final class MeetingLibraryModelTests: XCTestCase {
         }
     }
 
-    func testScanGroupsKnownArtifactsByRecordingBaseName() throws {
+    private func makeFolderMeeting(named name: String, transcript: Bool = false, note: Bool = false, corrections: Bool = false) throws {
+        let folder = fixtureDirectory.appendingPathComponent(name, isDirectory: true)
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("audio".utf8).write(to: folder.appendingPathComponent("recording.m4a"))
+        if transcript { try Data("transcript".utf8).write(to: folder.appendingPathComponent("transcript.txt")) }
+        if note { try Data("note".utf8).write(to: folder.appendingPathComponent("notes.txt")) }
+        if corrections { try Data("[]".utf8).write(to: folder.appendingPathComponent("corrections.json")) }
+    }
+
+    func testScanGroupsKnownArtifactsByMeetingFolder() throws {
         let records = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
 
         XCTAssertEqual(records.map(\.displayName).sorted(), ["partial", "product-sync"])
@@ -39,7 +41,7 @@ final class MeetingLibraryModelTests: XCTestCase {
     }
 
     func testProcessingOverridesReadyForActiveRecording() throws {
-        let activeURL = fixtureDirectory.appendingPathComponent("product-sync.m4a")
+        let activeURL = fixtureDirectory.appendingPathComponent("product-sync").appendingPathComponent("recording.m4a")
 
         let records = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: activeURL)
 
@@ -47,7 +49,7 @@ final class MeetingLibraryModelTests: XCTestCase {
     }
 
     func testScanPopulatesCorrectionsURLOnlyWhenSidecarExists() throws {
-        try Data("[]".utf8).write(to: fixtureDirectory.appendingPathComponent("product-sync.note-corrections.json"))
+        try Data("[]".utf8).write(to: fixtureDirectory.appendingPathComponent("product-sync").appendingPathComponent("corrections.json"))
 
         let records = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
 
@@ -66,5 +68,50 @@ final class MeetingLibraryModelTests: XCTestCase {
             MeetingLibraryIndex.filtered(records, searchText: "", filter: .partial).map(\.displayName),
             ["partial"]
         )
+    }
+
+    // MARK: - Migration
+
+    private func writeLegacyFlatMeeting(named name: String, transcript: Bool = true, note: Bool = true, corrections: Bool = true) throws {
+        try Data("audio".utf8).write(to: fixtureDirectory.appendingPathComponent("\(name).m4a"))
+        if transcript { try Data("transcript".utf8).write(to: fixtureDirectory.appendingPathComponent("\(name).txt")) }
+        if note { try Data("note".utf8).write(to: fixtureDirectory.appendingPathComponent("\(name).meeting-notes.txt")) }
+        if corrections { try Data("[]".utf8).write(to: fixtureDirectory.appendingPathComponent("\(name).note-corrections.json")) }
+    }
+
+    func testMigrationConvertsFlatMeetingIntoFolderFormat() throws {
+        try writeLegacyFlatMeeting(named: "legacy")
+
+        let records = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
+
+        let folder = fixtureDirectory.appendingPathComponent("legacy", isDirectory: true)
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("recording.m4a").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("transcript.txt").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("notes.txt").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("corrections.json").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: fixtureDirectory.appendingPathComponent("legacy.m4a").path))
+        XCTAssertTrue(records.contains { $0.displayName == "legacy" && $0.status == .ready })
+    }
+
+    func testMigrationIsIdempotentAcrossRepeatedScans() throws {
+        try writeLegacyFlatMeeting(named: "legacy")
+
+        _ = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
+        let secondRecords = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
+
+        XCTAssertEqual(secondRecords.filter { $0.displayName == "legacy" }.count, 1)
+    }
+
+    func testMigrationOfOneFailingMeetingDoesNotAffectAnother() throws {
+        try writeLegacyFlatMeeting(named: "blocked")
+        try fileManager.createDirectory(at: fixtureDirectory.appendingPathComponent("blocked", isDirectory: true), withIntermediateDirectories: true)
+        try writeLegacyFlatMeeting(named: "fine")
+
+        let records = try MeetingLibraryIndex.scan(directory: fixtureDirectory, processingURL: nil)
+
+        XCTAssertTrue(fileManager.fileExists(atPath: fixtureDirectory.appendingPathComponent("blocked.m4a").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixtureDirectory.appendingPathComponent("fine", isDirectory: true).appendingPathComponent("recording.m4a").path))
+        XCTAssertTrue(records.contains { $0.displayName == "fine" })
+        XCTAssertFalse(records.contains { $0.displayName == "blocked" })
     }
 }

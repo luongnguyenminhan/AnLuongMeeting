@@ -205,7 +205,7 @@ final class IOSCoreBehaviorTests: XCTestCase {
         await coordinator.resumePendingWork()
         for _ in 0..<3 { await Task.yield() }
 
-        let savedCorrections = NoteCorrectionStore(directory: directory, baseName: "Planning").load()
+        let savedCorrections = NoteCorrectionStore(directory: directory).load()
         XCTAssertEqual(savedCorrections.first?.wrongText, "Celesnet")
         let savedMemory = memoryStore.load()
         XCTAssertEqual(savedMemory.pendingMerges.first?.names, ["Le Tan", "Eric Nguyen"])

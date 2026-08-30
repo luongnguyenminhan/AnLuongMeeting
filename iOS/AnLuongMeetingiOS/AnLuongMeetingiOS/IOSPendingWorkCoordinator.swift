@@ -233,7 +233,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         memory.merge(draft: draft)
         Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
         try? memoryStore.save(memory)
-        Self.saveCorrections(draft.corrections, forNoteAt: meetingNoteURL)
+        Self.saveCorrections(draft.corrections, noteText: note, forNoteAt: meetingNoteURL)
         pendingMemoryCount = memory.pendingCount
     }
 
@@ -244,11 +244,17 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         }
     }
 
-    private static func saveCorrections(_ corrections: [NoteCorrection], forNoteAt noteURL: URL) {
-        guard !corrections.isEmpty else { return }
-        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
-        let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
-        try? store.save(corrections)
+    /// Merges freshly-found corrections with the existing sidecar rather than overwriting it:
+    /// a previously pending correction is dropped only when its wrongText no longer literally
+    /// appears in the current note (evidence it was actually fixed), not just because this
+    /// particular Gemini pass didn't re-flag it — an LLM response can be incomplete, and
+    /// trusting it as the sole source of truth would silently drop real unfixed issues.
+    private static func saveCorrections(_ corrections: [NoteCorrection], noteText: String, forNoteAt noteURL: URL) {
+        let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent())
+        let stillRelevant = store.load().filter { $0.status != .pending || noteText.contains($0.wrongText) }
+        let existingWrongTexts = Set(stillRelevant.map { $0.wrongText.lowercased() })
+        let merged = stillRelevant + corrections.filter { !existingWrongTexts.contains($0.wrongText.lowercased()) }
+        try? store.save(merged)
     }
 
     /// Scans existing meetings that already have both a transcript and a note, and runs the
@@ -280,7 +286,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                    ) {
                     memory.merge(draft: draft)
                     Self.mergePendingIdentityMerges(draft.identityMerges, into: &memory)
-                    Self.saveCorrections(draft.corrections, forNoteAt: noteURL)
+                    Self.saveCorrections(draft.corrections, noteText: note, forNoteAt: noteURL)
                 }
                 self.backfillProgress = (index + 1, eligible.count)
             }

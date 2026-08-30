@@ -86,6 +86,9 @@ struct IOSMeetingDetailView: View {
             Button("Delete Permanently", role: .destructive) { model.delete(meeting) }
         }
         .task { loadCorrections() }
+        .onChange(of: pending.processingState) { _, state in
+            if case .completed = state { loadCorrections() }
+        }
         .sheet(item: $activeCorrection) { correction in
             CorrectionPickerView(
                 correction: correction,
@@ -275,8 +278,7 @@ struct IOSMeetingDetailView: View {
 
     private func loadCorrections() {
         guard let noteURL = meeting.meetingNoteURL else { corrections = []; return }
-        let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
-        corrections = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName).load()
+        corrections = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent()).load()
     }
 
     private func applyCorrectionChoice(_ correction: NoteCorrection, chosenText: String?) {
@@ -307,8 +309,7 @@ struct IOSMeetingDetailView: View {
                 updatedCorrection.status = .keptOriginal
             }
 
-            let baseName = noteURL.lastPathComponent.replacingOccurrences(of: ".meeting-notes.txt", with: "")
-            let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent(), baseName: baseName)
+            let store = NoteCorrectionStore(directory: noteURL.deletingLastPathComponent())
             var all = store.load()
             if let index = all.firstIndex(where: { $0.id == correction.id }) {
                 all[index] = updatedCorrection

@@ -18,59 +18,33 @@ final class RecordingLibraryTests: XCTestCase {
         }
     }
 
-    func testRenameUpdatesEveryExistingArtifactAndPreservesSuffixes() throws {
-        makeMeeting(named: "old-name", transcript: true, note: true)
+    func testRenameMovesTheWholeFolderAndUpdatesArtifactURLs() throws {
+        makeMeeting(named: "old-name", transcript: true, note: true, corrections: true)
         let library = RecordingLibrary(directory: fixtureDirectory)
         library.refresh()
         let old = try XCTUnwrap(library.records.first { $0.displayName == "old-name" })
 
         try library.rename(old, to: "new-name")
 
-        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name.m4a").path))
-        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name.txt").path))
-        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name.meeting-notes.txt").path))
-        XCTAssertFalse(fileManager.fileExists(atPath: fixture("old-name.m4a").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name/recording.m4a").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name/transcript.txt").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name/notes.txt").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name/corrections.json").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: fixture("old-name").path))
         XCTAssertEqual(library.records.first?.displayName, "new-name")
     }
 
-    func testDeleteRemovesOnlyTheMeetingGroup() throws {
-        makeMeeting(named: "to-delete", transcript: true, note: true)
-        createFile(named: "keep.txt")
+    func testDeleteRemovesTheWholeFolder() throws {
+        makeMeeting(named: "to-delete", transcript: true, note: true, corrections: true)
+        makeMeeting(named: "keep", transcript: false, note: false)
         let library = RecordingLibrary(directory: fixtureDirectory)
         library.refresh()
         let meeting = try XCTUnwrap(library.records.first { $0.displayName == "to-delete" })
 
         try library.deletePermanently(meeting)
 
-        XCTAssertFalse(fileManager.fileExists(atPath: fixture("to-delete.m4a").path))
-        XCTAssertFalse(fileManager.fileExists(atPath: fixture("to-delete.txt").path))
-        XCTAssertFalse(fileManager.fileExists(atPath: fixture("to-delete.meeting-notes.txt").path))
-        XCTAssertTrue(fileManager.fileExists(atPath: fixture("keep.txt").path))
-    }
-
-    func testRenameMovesTheCorrectionsSidecar() throws {
-        makeMeeting(named: "old-name", transcript: true, note: true)
-        createFile(named: "old-name.note-corrections.json")
-        let library = RecordingLibrary(directory: fixtureDirectory)
-        library.refresh()
-        let old = try XCTUnwrap(library.records.first { $0.displayName == "old-name" })
-
-        try library.rename(old, to: "new-name")
-
-        XCTAssertTrue(fileManager.fileExists(atPath: fixture("new-name.note-corrections.json").path))
-        XCTAssertFalse(fileManager.fileExists(atPath: fixture("old-name.note-corrections.json").path))
-    }
-
-    func testDeleteRemovesTheCorrectionsSidecar() throws {
-        makeMeeting(named: "to-delete", transcript: true, note: true)
-        createFile(named: "to-delete.note-corrections.json")
-        let library = RecordingLibrary(directory: fixtureDirectory)
-        library.refresh()
-        let meeting = try XCTUnwrap(library.records.first { $0.displayName == "to-delete" })
-
-        try library.deletePermanently(meeting)
-
-        XCTAssertFalse(fileManager.fileExists(atPath: fixture("to-delete.note-corrections.json").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: fixture("to-delete").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("keep").path))
     }
 
     func testRenameCollisionThrowsBeforeChangingAnyArtifact() throws {
@@ -81,18 +55,17 @@ final class RecordingLibraryTests: XCTestCase {
         let source = try XCTUnwrap(library.records.first { $0.displayName == "source" })
 
         XCTAssertThrowsError(try library.rename(source, to: "target"))
-        XCTAssertTrue(fileManager.fileExists(atPath: fixture("source.m4a").path))
-        XCTAssertTrue(fileManager.fileExists(atPath: fixture("source.txt").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("source/recording.m4a").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: fixture("source/transcript.txt").path))
     }
 
-    private func makeMeeting(named name: String, transcript: Bool, note: Bool) {
-        createFile(named: "\(name).m4a")
-        if transcript { createFile(named: "\(name).txt") }
-        if note { createFile(named: "\(name).meeting-notes.txt") }
-    }
-
-    private func createFile(named name: String) {
-        try! Data(name.utf8).write(to: fixture(name))
+    private func makeMeeting(named name: String, transcript: Bool, note: Bool, corrections: Bool = false) {
+        let folder = fixtureDirectory.appendingPathComponent(name, isDirectory: true)
+        try! fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        try! Data("audio".utf8).write(to: folder.appendingPathComponent("recording.m4a"))
+        if transcript { try! Data("transcript".utf8).write(to: folder.appendingPathComponent("transcript.txt")) }
+        if note { try! Data("note".utf8).write(to: folder.appendingPathComponent("notes.txt")) }
+        if corrections { try! Data("[]".utf8).write(to: folder.appendingPathComponent("corrections.json")) }
     }
 
     private func fixture(_ name: String) -> URL {
