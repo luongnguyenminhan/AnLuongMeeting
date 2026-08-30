@@ -7,6 +7,7 @@ struct LibraryView: View {
     @State private var selectedFilter: MeetingFilter = .all
     @State private var selectedMeetingID: String?
     @State private var isShowingGlossary = false
+    @State private var isShowingNoteDetailSettings = false
     @State private var renameTarget: MeetingRecord?
     @State private var deleteTarget: MeetingRecord?
     @State private var operationError: String?
@@ -36,6 +37,7 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
                 glossaryRow
+                noteDetailSettingsRow
                 statusStrip
                 Divider().overlay(AnLuongTheme.secondary(for: colorScheme).opacity(0.28))
                 content
@@ -45,6 +47,8 @@ struct LibraryView: View {
         } detail: {
             if isShowingGlossary {
                 GlossaryView(engine: engine)
+            } else if isShowingNoteDetailSettings {
+                NoteDetailSettingsView()
             } else if let selectedMeeting {
                 MeetingDetailView(
                     meeting: selectedMeeting,
@@ -161,6 +165,7 @@ struct LibraryView: View {
         Button {
             selectedMeetingID = nil
             isShowingGlossary = true
+            isShowingNoteDetailSettings = false
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "text.book.closed")
@@ -191,6 +196,35 @@ struct LibraryView: View {
         .padding(.horizontal, 22)
         .padding(.bottom, 12)
         .accessibilityHint("Shows the learned glossary, participants, and note-style preferences")
+    }
+
+    private var noteDetailSettingsRow: some View {
+        Button {
+            selectedMeetingID = nil
+            isShowingGlossary = false
+            isShowingNoteDetailSettings = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "slider.horizontal.3")
+                Text("Note Detail")
+                    .font(AnLuongTypography.body(13).weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(AnLuongTheme.secondary(for: colorScheme).opacity(0.6))
+            }
+            .foregroundStyle(isShowingNoteDetailSettings ? AnLuongPalette.clay : AnLuongTheme.primary(for: colorScheme))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                isShowingNoteDetailSettings ? AnLuongTheme.rowSurface(for: colorScheme, isHovering: true) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 22)
+        .padding(.bottom, 12)
+        .accessibilityHint("Configure how much detail future meeting notes include")
     }
 
     private var statusStrip: some View {
@@ -281,6 +315,7 @@ struct LibraryView: View {
                             regenerateDisabled: engine.isTranscribing || engine.geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                             onSelect: {
                             isShowingGlossary = false
+                            isShowingNoteDetailSettings = false
                             selectedMeetingID = meeting.id
                         },
                             onRename: { renameTarget = meeting },

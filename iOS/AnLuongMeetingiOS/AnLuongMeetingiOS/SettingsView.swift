@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var saveMessage: String?
     @State private var testMessage: String?
     @State private var isTesting = false
+    @State private var notePreferences = NoteDetailPreferences.loadSaved()
     private let keyStore = IOSAPIKeyStore()
 
     init(notifications: IOSNotificationCoordinator) {
@@ -55,6 +56,28 @@ struct SettingsView: View {
                 }
                 .disabled(notifications.canNotify)
                 Text("Allow notifications to be told when a meeting finishes or processing fails. Notification text never includes transcript content.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Picker("Detail level", selection: $notePreferences.level) {
+                    Text("Concise").tag(NoteDetailLevel.concise)
+                    Text("Detailed").tag(NoteDetailLevel.detailed)
+                }
+                .onChange(of: notePreferences.level) { _, _ in notePreferences.save() }
+                Toggle("Include direct quotes for key statements", isOn: $notePreferences.includeQuotes)
+                    .onChange(of: notePreferences.includeQuotes) { _, _ in notePreferences.save() }
+                Toggle("Preserve technical & numeric details", isOn: $notePreferences.includeTechnicalDetails)
+                    .onChange(of: notePreferences.includeTechnicalDetails) { _, _ in notePreferences.save() }
+                Toggle("Include minor / tangential points", isOn: $notePreferences.includeMinorPoints)
+                    .onChange(of: notePreferences.includeMinorPoints) { _, _ in notePreferences.save() }
+                TextField("Additional instructions", text: $notePreferences.extraInstructions, axis: .vertical)
+                    .lineLimit(3...6)
+                    .onChange(of: notePreferences.extraInstructions) { _, _ in notePreferences.save() }
+            } header: {
+                Text("Meeting notes")
+            } footer: {
+                Text("Controls how much detail future meeting notes include — applies to every new recording and “Regenerate Note.”")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
