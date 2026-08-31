@@ -8,11 +8,15 @@ AnLuong Meeting is a private meeting recorder for macOS and iPhone. Record a con
 
 - **macOS recording:** captures microphone and system audio into a stereo `.m4a` file.
 - **iPhone recording:** captures microphone audio only and can continue while the app is backgrounded or the screen is locked.
-- **Gemini processing:** generates transcripts and meeting notes from recorded audio.
+- **Gemini note pipeline:** a decompose → explore → expand → synthesize pipeline breaks a transcript into topics, researches each one, then synthesizes a structured meeting note, falling back to a single-call generation if the pipeline fails.
+- **Auto-rename:** finished meetings are automatically renamed from the generated note's title instead of staying as a timestamp.
+- **Glossary and memory:** a personal glossary, participant list, and style preferences bias transcription and note generation toward known names and terms; Gemini also proposes corrections and identity merges after each note.
 - **Library:** search meetings, inspect transcript and note tabs, rename records, share exports, regenerate artifacts, and permanently delete meetings with confirmation.
 - **Markdown rendering:** meeting notes are displayed as formatted headings, paragraphs, lists, quotes, code blocks, and dividers instead of raw Markdown text.
-- **Local-first storage:** recordings and generated artifacts stay in the app's local recordings directory. The Gemini API key is stored in the platform Keychain.
+- **Local-first storage:** recordings and generated artifacts stay in the app's local recordings directory. Each platform keeps its own local storage with no cross-device sync. The Gemini API key is stored in the platform Keychain.
 - **Progress and recovery:** processing exposes status, segment progress, retry/cancel actions, and partial-result states.
+
+See [`docs/images/anluongmeeting-architecture.html`](docs/images/anluongmeeting-architecture.html) for an interactive architecture diagram of how recording, storage, the Gemini pipeline, and the glossary/memory loop fit together.
 
 ## Platform differences
 
