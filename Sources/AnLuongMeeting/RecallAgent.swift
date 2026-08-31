@@ -29,10 +29,14 @@ struct RecallAgent: Sendable {
       and Product Development Sync).
     - If the notes don't contain the answer, say so in one short sentence instead of guessing.
     - Answer in the same language as the question.
-    - Use short paragraphs or Markdown bullet points. Keep it concise.
+    - Format with real Markdown, not plain lines: use "## " for each section/category heading \
+      (never a plain line ending in a colon), "**bold**" for key terms or short labels within a \
+      sentence, and "- " for bullet points. Keep it concise — short sections, not walls of text.
     - The user turn may include recent conversation history before the new question — use it only \
       to resolve references like "it" or "that", never as a source of facts by itself.
-    - Wrap the entire final answer, and nothing else, between <answer> and </answer> tags.
+    - Wrap the entire final answer, and nothing else, between <answer> and </answer> tags. Example \
+      shape: <answer>## Business\\n- Point one (Meeting A)\\n- Point two (Meeting B)\\n\\n## \
+      Research\\n- Point three (Meeting A)</answer>
     """
 
     /// Answers `question` using only the top-matching meeting notes: embeds `question`, ranks

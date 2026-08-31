@@ -26,6 +26,12 @@ struct RecallView: View {
     @State private var isSearching = false
     @State private var streamingMessageID: UUID?
     @State private var indexStatus: (indexed: Int, total: Int) = (0, 0)
+    /// Characters received from the network but not yet revealed in the UI. Network chunks
+    /// arrive in bursty, uneven sizes (a whole sentence at once, then nothing for a second) —
+    /// buffering and draining this at a steady pace is what makes the reveal feel smooth rather
+    /// than jumpy, independent of how the underlying deltas happened to be sized.
+    @State private var revealBuffer = ""
+    @State private var networkFinished = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var conversationStore: RecallConversationStore {
@@ -187,8 +193,9 @@ struct RecallView: View {
                         // Rendered as plain incrementally-appended text while streaming — parsing
                         // partial Markdown mid-stream would flicker on incomplete syntax. Swaps to
                         // the formatted renderer below once the stream finishes.
-                        Text(message.text.isEmpty ? " " : message.text)
+                        (Text(message.text.isEmpty ? " " : message.text) + Text(" ▍").foregroundStyle(AnLuongPalette.clay))
                             .font(AnLuongTypography.body(13))
+                            .animation(.easeOut(duration: 0.12), value: message.text)
                     } else {
                         markdownBubbleContent(message.text)
                     }
@@ -243,34 +250,50 @@ struct RecallView: View {
     @ViewBuilder
     private func markdownBubbleBlock(_ block: AnLuongMarkdownBlock) -> some View {
         switch block {
-        case .heading(_, let text):
-            inlineText(text).font(AnLuongTypography.body(13).weight(.bold))
+        case .heading(let level, let text):
+            inlineText(text)
+                .font(AnLuongTypography.body(level == 1 ? 15 : 13.5).weight(.bold))
+                .foregroundStyle(AnLuongPalette.clay)
+                .padding(.top, 4)
         case .paragraph(let text):
-            inlineText(text).font(AnLuongTypography.body(13))
+            inlineText(text).font(AnLuongTypography.body(13)).lineSpacing(3)
         case .unorderedList(let items):
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text("•").font(AnLuongTypography.body(13))
-                        inlineText(item).font(AnLuongTypography.body(13))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Circle()
+                            .fill(AnLuongPalette.clay.opacity(0.7))
+                            .frame(width: 4, height: 4)
+                            .offset(y: -3)
+                        inlineText(item).font(AnLuongTypography.body(13)).lineSpacing(2)
                     }
                 }
             }
+            .padding(.leading, 2)
         case .orderedList(let items):
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text("\(index + 1).").font(AnLuongTypography.body(13))
-                        inlineText(item).font(AnLuongTypography.body(13))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(index + 1).")
+                            .font(AnLuongTypography.body(12).weight(.semibold))
+                            .foregroundStyle(AnLuongPalette.clay)
+                        inlineText(item).font(AnLuongTypography.body(13)).lineSpacing(2)
                     }
                 }
             }
         case .quote(let text):
-            inlineText(text).font(AnLuongTypography.body(13).italic())
+            HStack(alignment: .top, spacing: 8) {
+                Rectangle().fill(AnLuongPalette.clay.opacity(0.5)).frame(width: 2)
+                inlineText(text).font(AnLuongTypography.body(13).italic())
+            }
         case .code(let text):
-            Text(text).font(AnLuongTypography.mono(12))
+            Text(text)
+                .font(AnLuongTypography.mono(12))
+                .padding(8)
+                .background(AnLuongPalette.graphite.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(AnLuongPalette.ivoryBright)
         case .divider:
-            Divider()
+            Divider().padding(.vertical, 2)
         }
     }
 
@@ -395,6 +418,26 @@ struct RecallView: View {
 
     // MARK: - Submit
 
+    /// Drains `revealBuffer` at a steady pace instead of dumping each network delta straight
+    /// into the message the instant it arrives — network chunks land in bursty, uneven sizes, so
+    /// revealing them raw looks jumpy. Speeds up automatically if the buffer is backing up (the
+    /// network is outrunning the reveal rate) so a fast response never lags noticeably behind.
+    private func runRevealLoop(messageID: UUID) async {
+        while !revealBuffer.isEmpty || !networkFinished {
+            guard !revealBuffer.isEmpty else {
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                continue
+            }
+            let chunkSize = max(1, revealBuffer.count / 6)
+            let chunk = String(revealBuffer.prefix(chunkSize))
+            revealBuffer.removeFirst(chunk.count)
+            if let index = messages.firstIndex(where: { $0.id == messageID }) {
+                messages[index].text += chunk
+            }
+            try? await Task.sleep(nanoseconds: 12_000_000)
+        }
+    }
+
     private func submit() {
         guard canSubmit else { return }
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -406,6 +449,8 @@ struct RecallView: View {
         let assistantMessageID = UUID()
         isSearching = true
         streamingMessageID = nil
+        revealBuffer = ""
+        networkFinished = false
 
         Task {
             do {
@@ -413,10 +458,13 @@ struct RecallView: View {
                     if streamingMessageID == nil {
                         streamingMessageID = assistantMessageID
                         messages.append(RecallMessage(id: assistantMessageID, role: .assistant, text: ""))
+                        Task { await runRevealLoop(messageID: assistantMessageID) }
                     }
-                    guard let index = messages.firstIndex(where: { $0.id == assistantMessageID }) else { return }
-                    messages[index].text += delta
+                    revealBuffer += delta
                 }
+                networkFinished = true
+                while !revealBuffer.isEmpty { try? await Task.sleep(nanoseconds: 20_000_000) }
+
                 if let index = messages.firstIndex(where: { $0.id == assistantMessageID }) {
                     messages[index].citedMeetingIDs = result.citedMeetingIDs
                 } else {
@@ -427,6 +475,9 @@ struct RecallView: View {
                 persistConversation()
                 refreshIndexStatus()
             } catch {
+                networkFinished = true
+                while !revealBuffer.isEmpty { try? await Task.sleep(nanoseconds: 20_000_000) }
+
                 if let index = messages.firstIndex(where: { $0.id == assistantMessageID }), !messages[index].text.isEmpty {
                     messages[index].text += "\n\n⚠️ \(error.localizedDescription)"
                 } else if let index = messages.firstIndex(where: { $0.id == assistantMessageID }) {
