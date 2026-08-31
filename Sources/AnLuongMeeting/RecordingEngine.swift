@@ -364,6 +364,7 @@ final class RecordingEngine: ObservableObject {
                     meetingNoteURL: renamed.meetingNoteURL
                 )
                 self.refreshMemorySuggestions(transcriptURL: renamed.transcriptURL, meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
+                self.refreshEmbedding(meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
                 self.isTranscribing = false
                 self.transcriptionTask = nil
                 self.processingRecordingURL = nil
@@ -449,6 +450,36 @@ final class RecordingEngine: ObservableObject {
                 self.refreshPendingMemoryCount()
                 self.lastMemoryRefreshToken = UUID()
             }
+        }
+    }
+
+    /// Runs one instruction through the tool-calling note-edit agent, for the AI note-edit panel
+    /// to render proposed edits as a diff before the user approves anything.
+    func runNoteEditAgent(
+        instruction: String,
+        noteText: String,
+        transcriptURL: URL?,
+        onStatus: @escaping @Sendable (String) -> Void,
+        onPatch: @escaping @Sendable (NoteEditPatch) -> Void
+    ) async throws -> String {
+        let key = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
+        let agent = NoteEditAgent(service: transcriptionService, memoryStore: memoryStore, transcriptURL: transcriptURL)
+        return try await agent.run(instruction: instruction, noteText: noteText, apiKey: key, onStatus: onStatus, onPatch: onPatch)
+    }
+
+    /// Answers a question across every meeting in `meetings`, for the Recall screen.
+    func answerRecallQuestion(question: String, meetings: [MeetingRecord]) async throws -> RecallAnswer {
+        let key = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
+        let agent = RecallAgent(service: transcriptionService)
+        return try await agent.answer(question: question, meetings: meetings, apiKey: key)
+    }
+
+    private func refreshEmbedding(meetingNoteURL: URL, apiKey: String) {
+        let service = transcriptionService
+        Task {
+            await refreshNoteEmbedding(meetingNoteURL: meetingNoteURL, service: service, apiKey: apiKey)
         }
     }
 
@@ -690,6 +721,7 @@ final class RecordingEngine: ObservableObject {
                         meetingNoteURL: renamed.meetingNoteURL
                     )
                     self.refreshMemorySuggestions(transcriptURL: renamed.transcriptURL, meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
+                    self.refreshEmbedding(meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
 
                 case .both:
                     self?.transcriptionState = .processing(current: 0, total: 0)
@@ -731,6 +763,7 @@ final class RecordingEngine: ObservableObject {
                         meetingNoteURL: renamed.meetingNoteURL
                     )
                     self.refreshMemorySuggestions(transcriptURL: renamed.transcriptURL, meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
+                    self.refreshEmbedding(meetingNoteURL: renamed.meetingNoteURL, apiKey: key)
                 }
 
                 self?.isTranscribing = false
