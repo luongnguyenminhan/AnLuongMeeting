@@ -47,9 +47,9 @@ cat > "${CONTENTS}/Info.plist" <<EOF
     <key>CFBundleExecutable</key>
     <string>${EXECUTABLE_NAME}</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3.0</string>
+    <string>0.3.1</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key>
