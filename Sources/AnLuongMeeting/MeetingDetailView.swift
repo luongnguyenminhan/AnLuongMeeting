@@ -2,7 +2,9 @@
 // states: default · hover · focus · active · disabled · loading · error · success
 // contrast: pass (native macOS surfaces)
 
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MeetingDetailView: View {
     let meeting: MeetingRecord
@@ -17,6 +19,8 @@ struct MeetingDetailView: View {
     @State private var trace: [LLMTraceEntry] = []
     @State private var isProcessingLogExpanded = false
     @State private var isReportingCorrection = false
+    @State private var isAIEditPresented = false
+    @State private var noteRefreshToken = UUID()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(meeting: MeetingRecord, engine: RecordingEngine, onRename: @escaping () -> Void, onDelete: @escaping () -> Void) {
@@ -28,21 +32,38 @@ struct MeetingDetailView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            #if DEBUG
-            processingLogSection
-            #endif
-            tabBar
-            artifactContent
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                #if DEBUG
+                processingLogSection
+                #endif
+                tabBar
+                artifactContent
+            }
+            .background(AnLuongPalette.readingSurface)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if isAIEditPresented, let noteURL = meeting.meetingNoteURL {
+                Divider()
+                NoteAIEditPanel(
+                    noteURL: noteURL,
+                    transcriptURL: meeting.transcriptURL,
+                    engine: engine,
+                    onClose: { isAIEditPresented = false },
+                    onApplied: { noteRefreshToken = UUID() }
+                )
+                .frame(width: 380)
+                .transition(.move(edge: .trailing))
+            }
         }
-        .background(AnLuongPalette.readingSurface)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { loadCorrections(); loadTrace() }
         .onChange(of: engine.lastMemoryRefreshToken) { _, _ in loadCorrections() }
         .onChange(of: engine.lastTraceRefreshToken) { _, _ in loadTrace() }
         .onChange(of: meeting.id) { _, _ in
             selectedTab = meeting.meetingNoteURL != nil ? .meetingNote : .transcript
+            isAIEditPresented = false
             loadCorrections()
             loadTrace()
         }
@@ -111,7 +132,7 @@ struct MeetingDetailView: View {
             .popover(isPresented: $isActionsPopoverPresented, arrowEdge: .trailing) {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(MeetingDetailAction.allCases, id: \.self) { action in
-                        if action == .rename || action == .delete {
+                        if action == .exportPDF || action == .rename || action == .delete {
                             Divider()
                         }
                         actionButton(action)
@@ -257,12 +278,19 @@ struct MeetingDetailView: View {
     private func perform(_ action: MeetingDetailAction) {
         isActionsPopoverPresented = false
         switch action {
+        case .editNote:
+            selectedTab = .meetingNote
+            isAIEditPresented = true
         case .regenerateTranscript:
             engine.regenerate(meeting: meeting, mode: .transcriptOnly)
         case .regenerateNote:
             engine.regenerate(meeting: meeting, mode: .noteOnly)
         case .regenerateBoth:
             engine.regenerate(meeting: meeting, mode: .both)
+        case .exportPDF:
+            exportNotePDF()
+        case .copyPlainText:
+            copyNotePlainText()
         case .rename:
             onRename()
         case .delete:
@@ -271,9 +299,38 @@ struct MeetingDetailView: View {
     }
 
     private func isActionDisabled(_ action: MeetingDetailAction) -> Bool {
-        guard action.isRegeneration else { return false }
         let noAPIKey = engine.geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return engine.isTranscribing || noAPIKey || (action == .regenerateNote && meeting.transcriptURL == nil)
+        if action == .editNote {
+            return meeting.meetingNoteURL == nil || engine.isTranscribing || noAPIKey || isAIEditPresented
+        }
+        if action.requiresNote {
+            return meeting.meetingNoteURL == nil
+        }
+        guard action.isRegeneration else { return false }
+        return engine.isTranscribing || noAPIKey || isAIEditPresented || (action == .regenerateNote && meeting.transcriptURL == nil)
+    }
+
+    private func loadNoteBlocks() -> [AnLuongMarkdownBlock]? {
+        guard let noteURL = meeting.meetingNoteURL,
+              let note = try? String(contentsOf: noteURL, encoding: .utf8) else { return nil }
+        return AnLuongMarkdown.parse(note)
+    }
+
+    private func copyNotePlainText() {
+        guard let blocks = loadNoteBlocks() else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(AnLuongMarkdown.plainText(blocks), forType: .string)
+    }
+
+    private func exportNotePDF() {
+        guard let blocks = loadNoteBlocks() else { return }
+        let pdfData = AnLuongMarkdownPDF.render(title: meeting.displayName, blocks: blocks)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(meeting.displayName).pdf"
+        panel.allowedContentTypes = [.pdf]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? pdfData.write(to: url)
     }
 
     private var tabBar: some View {
@@ -327,6 +384,7 @@ struct MeetingDetailView: View {
                     terms: terms,
                     onTermCorrectionSubmitted: { term, chosenText in applyTermCorrection(term, chosenText: chosenText) }
                 )
+                .id(noteRefreshToken)
             } else {
                 AnLuongEmptyState(
                     title: "Meeting note unavailable",
@@ -479,17 +537,23 @@ struct MeetingDetailView: View {
 }
 
 enum MeetingDetailAction: CaseIterable, Equatable, Hashable {
+    case editNote
     case regenerateTranscript
     case regenerateNote
     case regenerateBoth
+    case exportPDF
+    case copyPlainText
     case rename
     case delete
 
     var title: String {
         switch self {
+        case .editNote: return "Edit with AI"
         case .regenerateTranscript: return "Regenerate Transcript"
         case .regenerateNote: return "Regenerate Note"
         case .regenerateBoth: return "Regenerate Both"
+        case .exportPDF: return "Export as PDF…"
+        case .copyPlainText: return "Copy as Plain Text"
         case .rename: return "Rename"
         case .delete: return "Delete Permanently"
         }
@@ -497,9 +561,12 @@ enum MeetingDetailAction: CaseIterable, Equatable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .editNote: return "sparkles"
         case .regenerateTranscript: return "arrow.triangle.2.circlepath"
         case .regenerateNote: return "doc.text.magnifyingglass"
         case .regenerateBoth: return "arrow.2.squarepath"
+        case .exportPDF: return "doc.richtext"
+        case .copyPlainText: return "doc.on.clipboard"
         case .rename: return "pencil"
         case .delete: return "trash"
         }
@@ -508,7 +575,14 @@ enum MeetingDetailAction: CaseIterable, Equatable, Hashable {
     var isRegeneration: Bool {
         switch self {
         case .regenerateTranscript, .regenerateNote, .regenerateBoth: return true
-        case .rename, .delete: return false
+        case .editNote, .exportPDF, .copyPlainText, .rename, .delete: return false
+        }
+    }
+
+    var requiresNote: Bool {
+        switch self {
+        case .exportPDF, .copyPlainText: return true
+        case .editNote, .regenerateTranscript, .regenerateNote, .regenerateBoth, .rename, .delete: return false
         }
     }
 }
@@ -924,6 +998,78 @@ enum AnLuongMarkdown {
     private static func quote(from line: String) -> String? {
         guard line.hasPrefix(">") else { return nil }
         return line.dropFirst().trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Renders blocks as plain text with no Markdown syntax, safe to paste into email/chat.
+    static func plainText(_ blocks: [AnLuongMarkdownBlock]) -> String {
+        blocks.compactMap { block -> String? in
+            switch block {
+            case .heading(_, let text): return text
+            case .paragraph(let text): return text
+            case .unorderedList(let items):
+                return items.map { "• \($0)" }.joined(separator: "\n")
+            case .orderedList(let items):
+                return items.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+            case .quote(let text): return text
+            case .code(let text): return text
+            case .divider: return nil
+            }
+        }.joined(separator: "\n\n")
+    }
+}
+
+/// Renders parsed Markdown blocks to a single tall PDF page.
+/// ponytail: no multi-page pagination — add real page breaks if notes are ever printed physically.
+enum AnLuongMarkdownPDF {
+    static func render(title: String, blocks: [AnLuongMarkdownBlock]) -> Data {
+        let attributed = NSMutableAttributedString(string: title + "\n\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 22, weight: .bold)
+        ])
+        for block in blocks {
+            attributed.append(paragraph(from: block))
+        }
+
+        let pageWidth: CGFloat = 612 // US Letter width in points
+        let margin: CGFloat = 48
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: pageWidth - margin * 2, height: 10))
+        textView.textStorage?.setAttributedString(attributed)
+        textView.textContainer?.widthTracksTextView = true
+        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+        let contentHeight = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 10
+        textView.frame = NSRect(x: margin, y: margin, width: pageWidth - margin * 2, height: contentHeight)
+
+        let pageView = NSView(frame: NSRect(x: 0, y: 0, width: pageWidth, height: contentHeight + margin * 2))
+        pageView.addSubview(textView)
+        return pageView.dataWithPDF(inside: pageView.bounds)
+    }
+
+    private static func paragraph(from block: AnLuongMarkdownBlock) -> NSAttributedString {
+        let bodyFont = NSFont.systemFont(ofSize: 13)
+        switch block {
+        case .heading(let level, let text):
+            let size: CGFloat = level == 1 ? 20 : level == 2 ? 17 : 15
+            return NSAttributedString(string: text + "\n\n", attributes: [
+                .font: NSFont.systemFont(ofSize: size, weight: .semibold)
+            ])
+        case .paragraph(let text):
+            return NSAttributedString(string: text + "\n\n", attributes: [.font: bodyFont])
+        case .unorderedList(let items):
+            let text = items.map { "•  \($0)" }.joined(separator: "\n") + "\n\n"
+            return NSAttributedString(string: text, attributes: [.font: bodyFont])
+        case .orderedList(let items):
+            let text = items.enumerated().map { "\($0.offset + 1).  \($0.element)" }.joined(separator: "\n") + "\n\n"
+            return NSAttributedString(string: text, attributes: [.font: bodyFont])
+        case .quote(let text):
+            return NSAttributedString(string: text + "\n\n", attributes: [
+                .font: NSFontManager.shared.convert(bodyFont, toHaveTrait: .italicFontMask)
+            ])
+        case .code(let text):
+            return NSAttributedString(string: text + "\n\n", attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            ])
+        case .divider:
+            return NSAttributedString(string: "\n")
+        }
     }
 }
 
