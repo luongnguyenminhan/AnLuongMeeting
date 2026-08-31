@@ -29,4 +29,28 @@ final class MarkdownTests: XCTestCase {
     func testEmptyMarkdownIsEmpty() {
         XCTAssertTrue(Markdown.parse("\n  \n").isEmpty)
     }
+
+    func testPlainTextStripsMarkdownSyntax() {
+        let blocks: [MarkdownBlock] = [
+            .heading(level: 1, text: "Meeting"),
+            .paragraph("Summary text."),
+            .unorderedList(["First", "Second"]),
+            .orderedList(["Step one", "Step two"]),
+            .quote("Quoted line"),
+            .divider
+        ]
+        XCTAssertEqual(Markdown.plainText(blocks), """
+        Meeting
+
+        Summary text.
+
+        • First
+        • Second
+
+        1. Step one
+        2. Step two
+
+        Quoted line
+        """)
+    }
 }

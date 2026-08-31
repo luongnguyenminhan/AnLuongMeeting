@@ -116,4 +116,21 @@ public enum Markdown {
         let compact = line.replacingOccurrences(of: " ", with: "")
         return compact == "---" || compact == "***" || compact == "___"
     }
+
+    /// Renders blocks as plain text with no Markdown syntax, safe to paste into email/chat.
+    public static func plainText(_ blocks: [MarkdownBlock]) -> String {
+        blocks.compactMap { block -> String? in
+            switch block {
+            case .heading(_, let text): return text
+            case .paragraph(let text): return text
+            case .unorderedList(let items):
+                return items.map { "• \($0)" }.joined(separator: "\n")
+            case .orderedList(let items):
+                return items.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+            case .quote(let text): return text
+            case .code(let text): return text
+            case .divider: return nil
+            }
+        }.joined(separator: "\n\n")
+    }
 }
