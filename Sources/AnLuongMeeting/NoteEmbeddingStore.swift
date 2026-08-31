@@ -40,11 +40,18 @@ func noteTextHash(_ text: String) -> String {
 /// background enrichment, matching how `RecordingEngine.refreshMemorySuggestions` already treats
 /// per-meeting failures as non-blocking. Shared by `RecordingEngine` (called after every note
 /// generation/regeneration) and `RecallAgent` (called as a backfill before ranking).
-func refreshNoteEmbedding(meetingNoteURL: URL, service: GeminiTranscriptionService, apiKey: String) async {
-    guard let note = try? String(contentsOf: meetingNoteURL, encoding: .utf8) else { return }
+@discardableResult
+func refreshNoteEmbedding(meetingNoteURL: URL, service: GeminiTranscriptionService, apiKey: String) async -> Bool {
+    guard let note = try? String(contentsOf: meetingNoteURL, encoding: .utf8) else { return false }
     let store = NoteEmbeddingStore(directory: meetingNoteURL.deletingLastPathComponent())
     let hash = noteTextHash(note)
-    if let existing = store.load(), existing.noteTextHash == hash { return }
-    guard let vector = try? await service.embedContent(text: note, apiKey: apiKey) else { return }
-    try? store.save(NoteEmbedding(vector: vector, noteTextHash: hash, model: NoteEmbedding.currentModel))
+    if let existing = store.load(), existing.noteTextHash == hash { return true }
+    do {
+        let vector = try await service.embedContent(text: note, apiKey: apiKey)
+        try store.save(NoteEmbedding(vector: vector, noteTextHash: hash, model: NoteEmbedding.currentModel))
+        return true
+    } catch {
+        Log.write("could not embed note at \(meetingNoteURL.path) — \(error.localizedDescription)")
+        return false
+    }
 }

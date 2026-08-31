@@ -70,6 +70,7 @@ final class RecordingEngine: ObservableObject {
     @Published private(set) var backfillProgress: (current: Int, total: Int) = (0, 0)
     @Published private(set) var isReindexingRecall = false
     @Published private(set) var reindexProgress: (current: Int, total: Int) = (0, 0)
+    @Published private(set) var reindexFailedCount = 0
     /// Bumped whenever a memory/correction analysis pass finishes writing to disk — views
     /// showing a specific meeting's corrections observe this to know when to reload, since the
     /// analysis runs in a detached Task that outlives the regenerate/transcribe call that started it.
@@ -501,17 +502,38 @@ final class RecordingEngine: ObservableObject {
 
         isReindexingRecall = true
         reindexProgress = (0, eligible.count)
+        reindexFailedCount = 0
         let service = transcriptionService
 
         Task {
+            var failed = 0
             for (index, record) in eligible.enumerated() {
                 if let noteURL = record.meetingNoteURL {
-                    await refreshNoteEmbedding(meetingNoteURL: noteURL, service: service, apiKey: key)
+                    let succeeded = await refreshNoteEmbedding(meetingNoteURL: noteURL, service: service, apiKey: key)
+                    if !succeeded { failed += 1 }
                 }
-                await MainActor.run { self.reindexProgress = (index + 1, eligible.count) }
+                await MainActor.run {
+                    self.reindexProgress = (index + 1, eligible.count)
+                    self.reindexFailedCount = failed
+                }
             }
             await MainActor.run { self.isReindexingRecall = false }
         }
+    }
+
+    /// How many existing meeting notes already have an up-to-date Recall embedding, for the
+    /// Recall screen's persistent status line. Reads straight from disk — cheap, and never stale
+    /// in the way a cached count could be after an external note edit.
+    func recallIndexStatus() -> (indexed: Int, total: Int) {
+        guard let records = try? MeetingLibraryIndex.scan(directory: recordingsDirectory, processingURL: nil) else { return (0, 0) }
+        let eligible = records.filter { $0.hasMeetingNote }
+        let indexed = eligible.filter { record in
+            guard let noteURL = record.meetingNoteURL,
+                  let note = try? String(contentsOf: noteURL, encoding: .utf8),
+                  let embedding = NoteEmbeddingStore(directory: noteURL.deletingLastPathComponent()).load() else { return false }
+            return embedding.noteTextHash == noteTextHash(note)
+        }.count
+        return (indexed, eligible.count)
     }
 
     private func refreshMemorySuggestions(transcriptURL: URL, meetingNoteURL: URL, apiKey: String) {

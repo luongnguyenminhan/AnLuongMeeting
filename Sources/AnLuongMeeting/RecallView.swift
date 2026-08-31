@@ -1,135 +1,287 @@
 import SwiftUI
 
+struct RecallMessage: Identifiable {
+    enum Role { case user, assistant }
+
+    let id = UUID()
+    let role: Role
+    let text: String
+    let citedMeetingIDs: [String]
+
+    init(role: Role, text: String, citedMeetingIDs: [String] = []) {
+        self.role = role
+        self.text = text
+        self.citedMeetingIDs = citedMeetingIDs
+    }
+}
+
 struct RecallView: View {
     @ObservedObject var engine: RecordingEngine
     let meetings: [MeetingRecord]
     let onSelectMeeting: (String) -> Void
 
-    @State private var question = ""
+    @State private var messages: [RecallMessage] = []
+    @State private var draft = ""
     @State private var isSearching = false
-    @State private var answer: RecallAnswer?
-    @State private var errorMessage: String?
+    @State private var indexStatus: (indexed: Int, total: Int) = (0, 0)
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(spacing: 0) {
             header
-            reindexRow
-            questionField
-            if isSearching {
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text("Searching your meetings…")
-                        .font(AnLuongTypography.body(12))
-                        .foregroundStyle(AnLuongPalette.mutedInk)
-                }
-            } else if let errorMessage {
-                Text(errorMessage)
-                    .font(AnLuongTypography.body(12))
-                    .foregroundStyle(.red)
-            } else if let answer {
-                answerView(answer)
-            }
-            Spacer()
+            Divider().overlay(AnLuongTheme.secondary(for: colorScheme).opacity(0.2))
+            conversation
+            Divider().overlay(AnLuongTheme.secondary(for: colorScheme).opacity(0.2))
+            inputBar
         }
-        .padding(30)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(AnLuongPalette.readingSurface)
+        .background(AnLuongTheme.canvas(for: colorScheme))
+        .onAppear {
+            refreshIndexStatus()
+            if indexStatus.total > 0, indexStatus.indexed < indexStatus.total {
+                engine.reindexAllNotesForRecall()
+            }
+        }
+        .onChange(of: engine.isReindexingRecall) { _, isRunning in
+            if !isRunning { refreshIndexStatus() }
+        }
     }
+
+    // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Recall")
-                .font(AnLuongTypography.display(28))
-                .foregroundStyle(AnLuongPalette.graphite)
-            Text("Ask a question across every meeting you've recorded.")
-                .font(AnLuongTypography.body(12))
-                .foregroundStyle(AnLuongPalette.mutedInk)
-        }
-    }
-
-    private var questionField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                TextField("What did we decide about…", text: $question)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(isSearching || apiKeyMissing)
-                    .onSubmit(submit)
-                Button("Ask", action: submit)
-                    .disabled(isSearching || apiKeyMissing || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Recall")
+                    .font(AnLuongTypography.display(22))
+                    .foregroundStyle(AnLuongTheme.primary(for: colorScheme))
+                indexStatusLine
             }
-            if apiKeyMissing {
-                Text("Enter a Gemini API key before using Recall.")
-                    .font(AnLuongTypography.body(11))
-                    .foregroundStyle(AnLuongPalette.mutedInk)
-            }
-        }
-    }
-
-    private var reindexRow: some View {
-        HStack(spacing: 10) {
+            Spacer()
             Button {
                 engine.reindexAllNotesForRecall()
             } label: {
-                Label("Index all meetings", systemImage: "arrow.triangle.2.circlepath")
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .rotationEffect(.degrees(engine.isReindexingRecall ? 360 : 0))
+                    .animation(
+                        engine.isReindexingRecall
+                            ? .linear(duration: 1).repeatForever(autoreverses: false)
+                            : .default,
+                        value: engine.isReindexingRecall
+                    )
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
             .disabled(engine.isReindexingRecall || apiKeyMissing)
+            .help("Re-index all meetings for Recall")
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 16)
+    }
 
-            if engine.isReindexingRecall {
-                ProgressView(value: Double(engine.reindexProgress.current), total: Double(max(engine.reindexProgress.total, 1)))
-                    .frame(width: 120)
-                Text("\(engine.reindexProgress.current)/\(engine.reindexProgress.total)")
-                    .font(AnLuongTypography.body(11))
-                    .foregroundStyle(AnLuongPalette.mutedInk)
+    @ViewBuilder
+    private var indexStatusLine: some View {
+        if engine.isReindexingRecall {
+            Text("Indexing meetings… \(engine.reindexProgress.current)/\(engine.reindexProgress.total)")
+                .font(AnLuongTypography.body(11))
+                .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
+        } else if indexStatus.total == 0 {
+            Text("No meeting notes yet.")
+                .font(AnLuongTypography.body(11))
+                .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
+        } else if indexStatus.indexed < indexStatus.total {
+            Text("\(indexStatus.indexed)/\(indexStatus.total) meetings indexed")
+                .font(AnLuongTypography.body(11))
+                .foregroundStyle(.orange)
+        } else {
+            Text("All \(indexStatus.total) meetings indexed")
+                .font(AnLuongTypography.body(11))
+                .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
+        }
+    }
+
+    // MARK: - Conversation
+
+    private var conversation: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if messages.isEmpty {
+                        emptyState
+                    }
+                    ForEach(messages) { message in
+                        messageBubble(message).id(message.id)
+                    }
+                    if isSearching {
+                        typingIndicator.id("typing")
+                    }
+                }
+                .padding(22)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onChange(of: messages.count) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: isSearching) { _, _ in scrollToBottom(proxy) }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Ask anything about your past meetings.")
+                .font(AnLuongTypography.body(14).weight(.medium))
+                .foregroundStyle(AnLuongTheme.primary(for: colorScheme))
+            Text("\u{201c}What did we decide about pricing last month?\u{201d}")
+                .font(AnLuongTypography.body(12))
+                .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 40)
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        withAnimation {
+            if isSearching {
+                proxy.scrollTo("typing", anchor: .bottom)
+            } else if let last = messages.last {
+                proxy.scrollTo(last.id, anchor: .bottom)
             }
         }
+    }
+
+    @ViewBuilder
+    private func messageBubble(_ message: RecallMessage) -> some View {
+        switch message.role {
+        case .user:
+            HStack {
+                Spacer(minLength: 40)
+                Text(message.text)
+                    .font(AnLuongTypography.body(13))
+                    .foregroundStyle(AnLuongPalette.ivoryBright)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(AnLuongPalette.graphite, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+
+        case .assistant:
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(message.text)
+                        .font(AnLuongTypography.body(13))
+                        .foregroundStyle(AnLuongTheme.primary(for: colorScheme))
+                        .textSelection(.enabled)
+
+                    if !message.citedMeetingIDs.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(message.citedMeetingIDs, id: \.self) { id in
+                                if let meeting = meetings.first(where: { $0.id == id }) {
+                                    Button {
+                                        onSelectMeeting(id)
+                                    } label: {
+                                        Label(meeting.displayName, systemImage: "doc.text")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(AnLuongTypography.body(11).weight(.medium))
+                                    .foregroundStyle(AnLuongPalette.clay)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    AnLuongTheme.controlSurface(for: colorScheme),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                Spacer(minLength: 40)
+            }
+        }
+    }
+
+    private var typingIndicator: some View {
+        HStack {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Searching your meetings…")
+                    .font(AnLuongTypography.body(12))
+                    .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                AnLuongTheme.controlSurface(for: colorScheme),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            Spacer(minLength: 40)
+        }
+    }
+
+    // MARK: - Input bar
+
+    private var inputBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if apiKeyMissing {
+                Text("Enter a Gemini API key before using Recall.")
+                    .font(AnLuongTypography.body(11))
+                    .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
+            }
+            HStack(spacing: 10) {
+                TextField("Ask about your meetings…", text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(AnLuongTypography.body(13))
+                    .foregroundStyle(AnLuongTheme.primary(for: colorScheme))
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(
+                        AnLuongTheme.controlSurface(for: colorScheme),
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    )
+                    .disabled(isSearching || apiKeyMissing)
+                    .onSubmit(submit)
+
+                Button(action: submit) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(canSubmit ? AnLuongPalette.clay : AnLuongTheme.secondary(for: colorScheme).opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSubmit)
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 14)
+    }
+
+    private var canSubmit: Bool {
+        !isSearching && !apiKeyMissing && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var apiKeyMissing: Bool {
         engine.geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func answerView(_ answer: RecallAnswer) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(answer.text)
-                .font(AnLuongTypography.body(14))
-                .foregroundStyle(AnLuongPalette.graphite)
-                .textSelection(.enabled)
-
-            if !answer.citedMeetingIDs.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("SOURCES")
-                        .font(AnLuongTypography.mono(10).weight(.semibold))
-                        .tracking(1.2)
-                        .foregroundStyle(AnLuongPalette.mutedInk)
-                    ForEach(answer.citedMeetingIDs, id: \.self) { id in
-                        if let meeting = meetings.first(where: { $0.id == id }) {
-                            Button(meeting.displayName) { onSelectMeeting(id) }
-                                .buttonStyle(.plain)
-                                .font(AnLuongTypography.body(13).weight(.medium))
-                                .foregroundStyle(AnLuongPalette.clay)
-                        }
-                    }
-                }
-            }
-        }
+    private func refreshIndexStatus() {
+        indexStatus = engine.recallIndexStatus()
     }
 
     private func submit() {
-        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isSearching else { return }
-        errorMessage = nil
-        answer = nil
+        guard canSubmit else { return }
+        let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        messages.append(RecallMessage(role: .user, text: question))
         isSearching = true
         Task {
             do {
-                let result = try await engine.answerRecallQuestion(question: trimmed, meetings: meetings)
+                let result = try await engine.answerRecallQuestion(question: question, meetings: meetings)
                 await MainActor.run {
-                    answer = result
+                    messages.append(RecallMessage(role: .assistant, text: result.text, citedMeetingIDs: result.citedMeetingIDs))
                     isSearching = false
+                    refreshIndexStatus()
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = error.localizedDescription
+                    messages.append(RecallMessage(role: .assistant, text: error.localizedDescription))
                     isSearching = false
                 }
             }
