@@ -31,6 +31,14 @@ enum RegenerationMode: Sendable {
     case both
 }
 
+/// A single targeted find/replace edit proposed against a meeting note's Markdown text.
+struct NoteEditPatch: Identifiable, Equatable, Sendable {
+    let id = UUID()
+    let oldString: String
+    let newString: String
+    let explanation: String
+}
+
 enum GeminiTranscriptionError: LocalizedError, Equatable {
     case missingAPIKey
     case invalidDuration
@@ -76,6 +84,7 @@ enum GeminiTranscriptionError: LocalizedError, Equatable {
 actor GeminiTranscriptionService {
     private static let chunkDuration: TimeInterval = 20 * 60
     private static let model = "gemini-3.1-flash-lite"
+    private static let embeddingModel = "text-embedding-004"
 
     private static let transcriptionPrompt = """
     Listen carefully to the following audio file. PROVIDE A DETAILED TRANSCRIPT WITH SPEAKER DIARIZATION, TRANSCRIBED VERBATIM IN WHATEVER LANGUAGE(S) ARE ACTUALLY SPOKEN — do not translate; transcribe each speaker's words in their original language.
@@ -709,12 +718,65 @@ actor GeminiTranscriptionService {
         return text
     }
 
+    /// Embeds `text` into a fixed-size vector for semantic similarity search — used to find
+    /// which past meetings are relevant to a Recall question without re-reading every note.
+    func embedContent(text: String, apiKey: String) async throws -> [Double] {
+        let url = apiURL(path: "v1beta/models/\(Self.embeddingModel):embedContent", apiKey: apiKey)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": "models/\(Self.embeddingModel)",
+            "content": ["parts": [["text": text]]]
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response, data: data)
+
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let embedding = root["embedding"] as? [String: Any],
+              let values = embedding["values"] as? [Double] else {
+            throw GeminiTranscriptionError.invalidResponse("No embedding was returned.")
+        }
+        return values
+    }
+
     static func requestBody(parts: [[String: Any]], systemInstruction: String?) -> [String: Any] {
         var body: [String: Any] = ["contents": [["parts": parts]]]
         if let systemInstruction, !systemInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             body["system_instruction"] = ["parts": [["text": systemInstruction]]]
         }
         return body
+    }
+
+    /// One round trip of a multi-turn, tool-calling conversation: sends the full turn history
+    /// plus available tools, and returns the model's next turn verbatim (its role and parts,
+    /// which may include `functionCall` parts) for the caller to dispatch and continue the loop.
+    func generateWithTools(
+        contents: [[String: Any]],
+        tools: [[String: Any]],
+        systemInstruction: String,
+        apiKey: String
+    ) async throws -> (role: String, parts: [[String: Any]]) {
+        let url = apiURL(path: "v1beta/models/\(Self.model):generateContent", apiKey: apiKey)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "contents": contents,
+            "tools": tools,
+            "system_instruction": ["parts": [["text": systemInstruction]]]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response, data: data)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = root["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]] else {
+            throw GeminiTranscriptionError.invalidResponse("Gemini returned no content.")
+        }
+        return (content["role"] as? String ?? "model", parts)
     }
 
     private func fetchRemoteFile(named name: String, apiKey: String) async throws -> RemoteFile {
