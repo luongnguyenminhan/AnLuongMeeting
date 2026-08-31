@@ -68,6 +68,8 @@ final class RecordingEngine: ObservableObject {
     @Published private(set) var pendingMemoryCount = 0
     @Published private(set) var isBackfillingMemory = false
     @Published private(set) var backfillProgress: (current: Int, total: Int) = (0, 0)
+    @Published private(set) var isReindexingRecall = false
+    @Published private(set) var reindexProgress: (current: Int, total: Int) = (0, 0)
     /// Bumped whenever a memory/correction analysis pass finishes writing to disk — views
     /// showing a specific meeting's corrections observe this to know when to reload, since the
     /// analysis runs in a detached Task that outlives the regenerate/transcribe call that started it.
@@ -480,6 +482,35 @@ final class RecordingEngine: ObservableObject {
         let service = transcriptionService
         Task {
             await refreshNoteEmbedding(meetingNoteURL: meetingNoteURL, service: service, apiKey: apiKey)
+        }
+    }
+
+    /// Explicitly (re)computes embeddings for every existing meeting note, for the Recall
+    /// screen's "Index all meetings" action — lets Recall catch up on meetings recorded before
+    /// this feature existed, or after a note was edited outside the app, instead of only
+    /// embedding lazily the first time a question is asked. Skips a note whose embedding is
+    /// already up to date (same skip logic as `refreshNoteEmbedding`), so this is safe to run
+    /// repeatedly without wasting API calls.
+    func reindexAllNotesForRecall() {
+        guard !isReindexingRecall else { return }
+        let key = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        guard let records = try? MeetingLibraryIndex.scan(directory: recordingsDirectory, processingURL: nil) else { return }
+        let eligible = records.filter { $0.hasMeetingNote }
+        guard !eligible.isEmpty else { return }
+
+        isReindexingRecall = true
+        reindexProgress = (0, eligible.count)
+        let service = transcriptionService
+
+        Task {
+            for (index, record) in eligible.enumerated() {
+                if let noteURL = record.meetingNoteURL {
+                    await refreshNoteEmbedding(meetingNoteURL: noteURL, service: service, apiKey: key)
+                }
+                await MainActor.run { self.reindexProgress = (index + 1, eligible.count) }
+            }
+            await MainActor.run { self.isReindexingRecall = false }
         }
     }
 

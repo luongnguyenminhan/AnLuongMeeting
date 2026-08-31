@@ -13,6 +13,7 @@ struct RecallView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             header
+            reindexRow
             questionField
             if isSearching {
                 HStack(spacing: 10) {
@@ -58,6 +59,25 @@ struct RecallView: View {
             }
             if apiKeyMissing {
                 Text("Enter a Gemini API key before using Recall.")
+                    .font(AnLuongTypography.body(11))
+                    .foregroundStyle(AnLuongPalette.mutedInk)
+            }
+        }
+    }
+
+    private var reindexRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                engine.reindexAllNotesForRecall()
+            } label: {
+                Label("Index all meetings", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(engine.isReindexingRecall || apiKeyMissing)
+
+            if engine.isReindexingRecall {
+                ProgressView(value: Double(engine.reindexProgress.current), total: Double(max(engine.reindexProgress.total, 1)))
+                    .frame(width: 120)
+                Text("\(engine.reindexProgress.current)/\(engine.reindexProgress.total)")
                     .font(AnLuongTypography.body(11))
                     .foregroundStyle(AnLuongPalette.mutedInk)
             }
