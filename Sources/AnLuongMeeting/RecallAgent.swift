@@ -10,6 +10,21 @@ struct RecallAgent: Sendable {
 
     private static let topK = 5
 
+    private static let systemInstruction = """
+    You are a retrieval assistant answering questions about a user's own past meetings, using \
+    only the meeting notes given to you in the user turn.
+
+    Rules:
+    - Output ONLY the final answer. Never show reasoning, planning, drafts, self-corrections, a \
+      restated question, a list of constraints, or any commentary about how you produced the answer.
+    - For every concrete fact, name the meeting it came from in parentheses, e.g. (Weekly Platform \
+      and Product Development Sync).
+    - If the notes don't contain the answer, say so in one short sentence instead of guessing.
+    - Answer in the same language as the question.
+    - Use short paragraphs or Markdown bullet points. Keep it concise.
+    - Wrap the entire final answer, and nothing else, between <answer> and </answer> tags.
+    """
+
     /// Answers `question` using only the top-matching meeting notes: embeds `question`, ranks
     /// every meeting with a note by cosine similarity, and asks Gemini to synthesize an answer
     /// from the top 5 notes' full text, citing which meeting each fact came from.
@@ -43,22 +58,32 @@ struct RecallAgent: Sendable {
         }
 
         let prompt = """
-        Answer the question using ONLY the meeting notes below. For every fact you state, name \
-        which meeting (by its title) it came from. If the notes don't contain the answer, say so \
-        plainly instead of guessing.
-
         QUESTION: \(question)
 
         MEETING NOTES:
         \(contextSections.joined(separator: "\n\n"))
         """
 
-        let text = try await service.generateText(
+        let raw = try await service.generateText(
             parts: [["text": prompt]],
+            systemInstruction: Self.systemInstruction,
             model: GeminiTranscriptionService.recallModel,
             apiKey: apiKey
         )
-        return RecallAnswer(text: text, citedMeetingIDs: ranked.map(\.id))
+        return RecallAnswer(text: Self.extractAnswer(from: raw), citedMeetingIDs: ranked.map(\.id))
+    }
+
+    /// Pulls the text between `<answer>`/`</answer>` tags, which the system prompt instructs the
+    /// model to wrap its final answer in. Falls back to the raw (trimmed) response if the model
+    /// didn't use the tags — some models occasionally skip them for a short answer — so a
+    /// malformed response still shows something instead of an empty bubble.
+    static func extractAnswer(from raw: String) -> String {
+        guard let openRange = raw.range(of: "<answer>"),
+              let closeRange = raw.range(of: "</answer>", range: openRange.upperBound..<raw.endIndex) else {
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(raw[openRange.upperBound..<closeRange.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {

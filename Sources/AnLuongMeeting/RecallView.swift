@@ -165,8 +165,7 @@ struct RecallView: View {
         case .assistant:
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(message.text)
-                        .font(AnLuongTypography.body(13))
+                    markdownBubbleContent(message.text)
                         .foregroundStyle(AnLuongTheme.primary(for: colorScheme))
                         .textSelection(.enabled)
 
@@ -196,6 +195,66 @@ struct RecallView: View {
                 Spacer(minLength: 40)
             }
         }
+    }
+
+    /// Renders an assistant answer's Markdown (headings, bullets, bold/italic) instead of
+    /// dumping raw `#`/`-`/`**` syntax into the bubble — reuses the same block parser the note
+    /// reader already uses, at chat-appropriate sizing.
+    @ViewBuilder
+    private func markdownBubbleContent(_ text: String) -> some View {
+        let blocks = AnLuongMarkdown.parse(text)
+        if blocks.isEmpty {
+            Text(text).font(AnLuongTypography.body(13))
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                    markdownBubbleBlock(block)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func markdownBubbleBlock(_ block: AnLuongMarkdownBlock) -> some View {
+        switch block {
+        case .heading(_, let text):
+            inlineText(text).font(AnLuongTypography.body(13).weight(.bold))
+        case .paragraph(let text):
+            inlineText(text).font(AnLuongTypography.body(13))
+        case .unorderedList(let items):
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("•").font(AnLuongTypography.body(13))
+                        inlineText(item).font(AnLuongTypography.body(13))
+                    }
+                }
+            }
+        case .orderedList(let items):
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("\(index + 1).").font(AnLuongTypography.body(13))
+                        inlineText(item).font(AnLuongTypography.body(13))
+                    }
+                }
+            }
+        case .quote(let text):
+            inlineText(text).font(AnLuongTypography.body(13).italic())
+        case .code(let text):
+            Text(text).font(AnLuongTypography.mono(12))
+        case .divider:
+            Divider()
+        }
+    }
+
+    /// Renders inline `**bold**`/`*italic*`/`` `code` `` within a block's text, falling back to
+    /// plain text if the fragment isn't valid inline Markdown.
+    private func inlineText(_ text: String) -> Text {
+        if let attributed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return Text(attributed)
+        }
+        return Text(text)
     }
 
     private var typingIndicator: some View {

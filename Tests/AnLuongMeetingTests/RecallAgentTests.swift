@@ -35,4 +35,18 @@ final class RecallAgentTests: XCTestCase {
 
         XCTAssertEqual(RecallAgent.topMatches(query: [1, 0], candidates: candidates, limit: 1), ["a"])
     }
+
+    func testExtractAnswerPullsTextBetweenTags() {
+        let raw = "Some reasoning first.\n<answer>The team decided X (Weekly Sync).</answer>\nTrailing junk."
+        XCTAssertEqual(RecallAgent.extractAnswer(from: raw), "The team decided X (Weekly Sync).")
+    }
+
+    func testExtractAnswerFallsBackToTrimmedRawTextWithoutTags() {
+        XCTAssertEqual(RecallAgent.extractAnswer(from: "  Just a plain answer.  "), "Just a plain answer.")
+    }
+
+    func testExtractAnswerTrimsWhitespaceInsideTags() {
+        let raw = "<answer>\n  Multi-line answer.  \n</answer>"
+        XCTAssertEqual(RecallAgent.extractAnswer(from: raw), "Multi-line answer.")
+    }
 }
