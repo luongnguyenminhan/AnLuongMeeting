@@ -471,12 +471,22 @@ final class RecordingEngine: ObservableObject {
         return try await agent.run(instruction: instruction, noteText: noteText, apiKey: key, onStatus: onStatus, onPatch: onPatch)
     }
 
-    /// Answers a question across every meeting in `meetings`, for the Recall screen.
-    func answerRecallQuestion(question: String, meetings: [MeetingRecord]) async throws -> RecallAnswer {
+    /// Answers a question across every meeting in `meetings`, for the Recall screen. `onDelta`
+    /// fires with each new fragment of the answer as it streams in — always on the main actor,
+    /// matching how `transcribe`'s `progress` callback already bridges the Gemini actor back to
+    /// UI-observable state.
+    func answerRecallQuestion(
+        question: String,
+        history: [RecallTurn],
+        meetings: [MeetingRecord],
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> RecallAnswer {
         let key = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw GeminiTranscriptionError.missingAPIKey }
         let agent = RecallAgent(service: transcriptionService)
-        return try await agent.answer(question: question, meetings: meetings, apiKey: key)
+        return try await agent.answer(question: question, history: history, meetings: meetings, apiKey: key) { delta in
+            Task { @MainActor in onDelta(delta) }
+        }
     }
 
     private func refreshEmbedding(meetingNoteURL: URL, apiKey: String) {

@@ -3,12 +3,13 @@ import SwiftUI
 struct RecallMessage: Identifiable {
     enum Role { case user, assistant }
 
-    let id = UUID()
+    let id: UUID
     let role: Role
-    let text: String
-    let citedMeetingIDs: [String]
+    var text: String
+    var citedMeetingIDs: [String]
 
-    init(role: Role, text: String, citedMeetingIDs: [String] = []) {
+    init(id: UUID = UUID(), role: Role, text: String, citedMeetingIDs: [String] = []) {
+        self.id = id
         self.role = role
         self.text = text
         self.citedMeetingIDs = citedMeetingIDs
@@ -23,8 +24,13 @@ struct RecallView: View {
     @State private var messages: [RecallMessage] = []
     @State private var draft = ""
     @State private var isSearching = false
+    @State private var streamingMessageID: UUID?
     @State private var indexStatus: (indexed: Int, total: Int) = (0, 0)
     @Environment(\.colorScheme) private var colorScheme
+
+    private var conversationStore: RecallConversationStore {
+        RecallConversationStore(directory: engine.recordingsDirectory)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,6 +42,7 @@ struct RecallView: View {
         }
         .background(AnLuongTheme.canvas(for: colorScheme))
         .onAppear {
+            loadConversation()
             refreshIndexStatus()
             if indexStatus.total > 0, indexStatus.indexed < indexStatus.total {
                 engine.reindexAllNotesForRecall()
@@ -57,6 +64,16 @@ struct RecallView: View {
                 indexStatusLine
             }
             Spacer()
+            Button {
+                clearConversation()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(AnLuongTheme.secondary(for: colorScheme))
+            .disabled(messages.isEmpty || isSearching)
+            .help("Clear conversation")
+
             Button {
                 engine.reindexAllNotesForRecall()
             } label: {
@@ -111,7 +128,7 @@ struct RecallView: View {
                     ForEach(messages) { message in
                         messageBubble(message).id(message.id)
                     }
-                    if isSearching {
+                    if isSearching && streamingMessageID == nil {
                         typingIndicator.id("typing")
                     }
                 }
@@ -119,6 +136,7 @@ struct RecallView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onChange(of: messages.count) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: messages.last?.text) { _, _ in scrollToBottom(proxy) }
             .onChange(of: isSearching) { _, _ in scrollToBottom(proxy) }
         }
     }
@@ -138,10 +156,10 @@ struct RecallView: View {
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation {
-            if isSearching {
-                proxy.scrollTo("typing", anchor: .bottom)
-            } else if let last = messages.last {
+            if let last = messages.last {
                 proxy.scrollTo(last.id, anchor: .bottom)
+            } else if isSearching {
+                proxy.scrollTo("typing", anchor: .bottom)
             }
         }
     }
@@ -165,9 +183,15 @@ struct RecallView: View {
         case .assistant:
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    markdownBubbleContent(message.text)
-                        .foregroundStyle(AnLuongTheme.primary(for: colorScheme))
-                        .textSelection(.enabled)
+                    if message.id == streamingMessageID {
+                        // Rendered as plain incrementally-appended text while streaming — parsing
+                        // partial Markdown mid-stream would flicker on incomplete syntax. Swaps to
+                        // the formatted renderer below once the stream finishes.
+                        Text(message.text.isEmpty ? " " : message.text)
+                            .font(AnLuongTypography.body(13))
+                    } else {
+                        markdownBubbleContent(message.text)
+                    }
 
                     if !message.citedMeetingIDs.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
@@ -186,6 +210,8 @@ struct RecallView: View {
                         }
                     }
                 }
+                .foregroundStyle(AnLuongTheme.primary(for: colorScheme))
+                .textSelection(.enabled)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
@@ -324,25 +350,93 @@ struct RecallView: View {
         indexStatus = engine.recallIndexStatus()
     }
 
+    // MARK: - Persistence
+
+    private func loadConversation() {
+        messages = conversationStore.load().map { stored in
+            RecallMessage(
+                role: stored.role == .user ? .user : .assistant,
+                text: stored.text,
+                citedMeetingIDs: stored.citedMeetingIDs
+            )
+        }
+    }
+
+    private func persistConversation() {
+        let stored = messages.map {
+            RecallStoredMessage(role: $0.role == .user ? .user : .assistant, text: $0.text, citedMeetingIDs: $0.citedMeetingIDs)
+        }
+        try? conversationStore.save(stored)
+    }
+
+    private func clearConversation() {
+        messages = []
+        try? conversationStore.clear()
+    }
+
+    /// The last few question/answer pairs already in the transcript, for follow-up questions to
+    /// resolve references like "it" or "that" against.
+    private var conversationHistory: [RecallTurn] {
+        var turns: [RecallTurn] = []
+        var pendingQuestion: String?
+        for message in messages {
+            switch message.role {
+            case .user:
+                pendingQuestion = message.text
+            case .assistant:
+                if let question = pendingQuestion {
+                    turns.append(RecallTurn(question: question, answerText: message.text))
+                    pendingQuestion = nil
+                }
+            }
+        }
+        return turns
+    }
+
+    // MARK: - Submit
+
     private func submit() {
         guard canSubmit else { return }
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let history = conversationHistory
         draft = ""
         messages.append(RecallMessage(role: .user, text: question))
+        persistConversation()
+
+        let assistantMessageID = UUID()
         isSearching = true
+        streamingMessageID = nil
+
         Task {
             do {
-                let result = try await engine.answerRecallQuestion(question: question, meetings: meetings)
-                await MainActor.run {
-                    messages.append(RecallMessage(role: .assistant, text: result.text, citedMeetingIDs: result.citedMeetingIDs))
-                    isSearching = false
-                    refreshIndexStatus()
+                let result = try await engine.answerRecallQuestion(question: question, history: history, meetings: meetings) { delta in
+                    if streamingMessageID == nil {
+                        streamingMessageID = assistantMessageID
+                        messages.append(RecallMessage(id: assistantMessageID, role: .assistant, text: ""))
+                    }
+                    guard let index = messages.firstIndex(where: { $0.id == assistantMessageID }) else { return }
+                    messages[index].text += delta
                 }
+                if let index = messages.firstIndex(where: { $0.id == assistantMessageID }) {
+                    messages[index].citedMeetingIDs = result.citedMeetingIDs
+                } else {
+                    messages.append(RecallMessage(id: assistantMessageID, role: .assistant, text: result.text, citedMeetingIDs: result.citedMeetingIDs))
+                }
+                isSearching = false
+                streamingMessageID = nil
+                persistConversation()
+                refreshIndexStatus()
             } catch {
-                await MainActor.run {
-                    messages.append(RecallMessage(role: .assistant, text: error.localizedDescription))
-                    isSearching = false
+                if let index = messages.firstIndex(where: { $0.id == assistantMessageID }), !messages[index].text.isEmpty {
+                    messages[index].text += "\n\n⚠️ \(error.localizedDescription)"
+                } else if let index = messages.firstIndex(where: { $0.id == assistantMessageID }) {
+                    messages[index].text = error.localizedDescription
+                } else {
+                    messages.append(RecallMessage(id: assistantMessageID, role: .assistant, text: error.localizedDescription))
                 }
+                isSearching = false
+                streamingMessageID = nil
+                persistConversation()
             }
         }
     }

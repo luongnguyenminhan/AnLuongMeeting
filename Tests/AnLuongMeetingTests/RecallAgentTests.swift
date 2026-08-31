@@ -36,17 +36,25 @@ final class RecallAgentTests: XCTestCase {
         XCTAssertEqual(RecallAgent.topMatches(query: [1, 0], candidates: candidates, limit: 1), ["a"])
     }
 
-    func testExtractAnswerPullsTextBetweenTags() {
-        let raw = "Some reasoning first.\n<answer>The team decided X (Weekly Sync).</answer>\nTrailing junk."
-        XCTAssertEqual(RecallAgent.extractAnswer(from: raw), "The team decided X (Weekly Sync).")
+    func testRenderHistoryIsEmptyWithNoPriorTurns() {
+        XCTAssertEqual(RecallAgent.renderHistory([]), "")
     }
 
-    func testExtractAnswerFallsBackToTrimmedRawTextWithoutTags() {
-        XCTAssertEqual(RecallAgent.extractAnswer(from: "  Just a plain answer.  "), "Just a plain answer.")
+    func testRenderHistoryIncludesQuestionAndAnswerPairs() {
+        let history = [RecallTurn(question: "What did we decide?", answerText: "You decided X.")]
+        XCTAssertEqual(
+            RecallAgent.renderHistory(history),
+            "CONVERSATION SO FAR:\nUser: What did we decide?\nAssistant: You decided X.\n\n"
+        )
     }
 
-    func testExtractAnswerTrimsWhitespaceInsideTags() {
-        let raw = "<answer>\n  Multi-line answer.  \n</answer>"
-        XCTAssertEqual(RecallAgent.extractAnswer(from: raw), "Multi-line answer.")
+    func testRenderHistoryKeepsOnlyTheMostRecentTurns() {
+        let history = (0..<5).map { RecallTurn(question: "Q\($0)", answerText: "A\($0)") }
+        let rendered = RecallAgent.renderHistory(history)
+
+        XCTAssertFalse(rendered.contains("Q0"))
+        XCTAssertFalse(rendered.contains("Q1"))
+        XCTAssertTrue(rendered.contains("Q2"))
+        XCTAssertTrue(rendered.contains("Q4"))
     }
 }

@@ -5,10 +5,18 @@ struct RecallAnswer: Sendable {
     let citedMeetingIDs: [String]
 }
 
+/// One prior question/answer pair, for giving a follow-up question conversational context (so
+/// "what about the deadline?" can resolve what "it" refers to).
+struct RecallTurn: Sendable {
+    let question: String
+    let answerText: String
+}
+
 struct RecallAgent: Sendable {
     let service: GeminiTranscriptionService
 
     private static let topK = 5
+    private static let maxHistoryTurns = 3
 
     private static let systemInstruction = """
     You are a retrieval assistant answering questions about a user's own past meetings, using \
@@ -22,13 +30,23 @@ struct RecallAgent: Sendable {
     - If the notes don't contain the answer, say so in one short sentence instead of guessing.
     - Answer in the same language as the question.
     - Use short paragraphs or Markdown bullet points. Keep it concise.
+    - The user turn may include recent conversation history before the new question — use it only \
+      to resolve references like "it" or "that", never as a source of facts by itself.
     - Wrap the entire final answer, and nothing else, between <answer> and </answer> tags.
     """
 
     /// Answers `question` using only the top-matching meeting notes: embeds `question`, ranks
-    /// every meeting with a note by cosine similarity, and asks Gemini to synthesize an answer
-    /// from the top 5 notes' full text, citing which meeting each fact came from.
-    func answer(question: String, meetings: [MeetingRecord], apiKey: String) async throws -> RecallAnswer {
+    /// every meeting with a note by cosine similarity, and streams Gemini's synthesis of an
+    /// answer from the top 5 notes' full text, citing which meeting each fact came from.
+    /// `onDelta` is invoked with each new fragment of visible answer text as it streams in (the
+    /// model's own reasoning/self-correction never reaches it — see `AnswerTagStreamBuffer`).
+    func answer(
+        question: String,
+        history: [RecallTurn],
+        meetings: [MeetingRecord],
+        apiKey: String,
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> RecallAnswer {
         for meeting in meetings {
             guard let noteURL = meeting.meetingNoteURL else { continue }
             await refreshNoteEmbedding(meetingNoteURL: noteURL, service: service, apiKey: apiKey)
@@ -58,32 +76,44 @@ struct RecallAgent: Sendable {
         }
 
         let prompt = """
-        QUESTION: \(question)
+        \(Self.renderHistory(history))QUESTION: \(question)
 
         MEETING NOTES:
         \(contextSections.joined(separator: "\n\n"))
         """
 
-        let raw = try await service.generateText(
+        var buffer = AnswerTagStreamBuffer()
+        var fullText = ""
+
+        try await service.streamText(
             parts: [["text": prompt]],
             systemInstruction: Self.systemInstruction,
             model: GeminiTranscriptionService.recallModel,
             apiKey: apiKey
-        )
-        return RecallAnswer(text: Self.extractAnswer(from: raw), citedMeetingIDs: ranked.map(\.id))
+        ) { delta in
+            let visible = buffer.append(delta)
+            guard !visible.isEmpty else { return }
+            fullText += visible
+            onDelta(visible)
+        }
+
+        let tail = buffer.finish()
+        if !tail.isEmpty {
+            fullText += tail
+            onDelta(tail)
+        }
+
+        return RecallAnswer(text: fullText, citedMeetingIDs: ranked.map(\.id))
     }
 
-    /// Pulls the text between `<answer>`/`</answer>` tags, which the system prompt instructs the
-    /// model to wrap its final answer in. Falls back to the raw (trimmed) response if the model
-    /// didn't use the tags — some models occasionally skip them for a short answer — so a
-    /// malformed response still shows something instead of an empty bubble.
-    static func extractAnswer(from raw: String) -> String {
-        guard let openRange = raw.range(of: "<answer>"),
-              let closeRange = raw.range(of: "</answer>", range: openRange.upperBound..<raw.endIndex) else {
-            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return String(raw[openRange.upperBound..<closeRange.lowerBound])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Renders the last few turns as plain text context ahead of the new question. Returns an
+    /// empty string (not even a header) when there's no history, so the prompt shape for a
+    /// first question is unchanged from before multi-turn support existed.
+    static func renderHistory(_ history: [RecallTurn]) -> String {
+        let recent = history.suffix(maxHistoryTurns)
+        guard !recent.isEmpty else { return "" }
+        let rendered = recent.map { "User: \($0.question)\nAssistant: \($0.answerText)" }.joined(separator: "\n\n")
+        return "CONVERSATION SO FAR:\n\(rendered)\n\n"
     }
 
     static func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {

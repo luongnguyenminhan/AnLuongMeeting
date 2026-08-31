@@ -720,6 +720,53 @@ actor GeminiTranscriptionService {
         return text
     }
 
+    /// Streams a text response incrementally via Gemini's server-sent-events endpoint, invoking
+    /// `onDelta` with each new text fragment as it arrives. The initial connection (including a
+    /// non-2xx status such as a rate limit) is retried with backoff, same as every other call in
+    /// this actor — but once bytes have started arriving, a failure partway through the stream is
+    /// NOT retried, since re-sending the whole request would risk emitting duplicated or garbled
+    /// text into a UI that may have already shown part of a previous attempt's answer.
+    func streamText(
+        parts: [[String: Any]],
+        systemInstruction: String? = nil,
+        model: String,
+        apiKey: String,
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws {
+        let url = apiURL(
+            path: "v1beta/models/\(model):streamGenerateContent",
+            apiKey: apiKey,
+            extraQueryItems: [URLQueryItem(name: "alt", value: "sse")]
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: Self.requestBody(parts: parts, systemInstruction: systemInstruction))
+
+        let bytes: URLSession.AsyncBytes = try await GeminiRetry.run {
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            try await self.validate(response)
+            return bytes
+        }
+
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            guard let data = String(line.dropFirst(6)).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let candidates = root["candidates"] as? [[String: Any]],
+                  let content = candidates.first?["content"] as? [String: Any],
+                  let responseParts = content["parts"] as? [[String: Any]] else { continue }
+            // Thinking models (e.g. Gemma) mark internal reasoning parts with "thought": true —
+            // skip those so only real output ever reaches onDelta. Models that don't set this
+            // field never include it, so this is a no-op for them.
+            let text = responseParts
+                .filter { ($0["thought"] as? Bool) != true }
+                .compactMap { $0["text"] as? String }
+                .joined()
+            if !text.isEmpty { onDelta(text) }
+        }
+    }
+
     /// Embeds `text` into a fixed-size vector for semantic similarity search — used to find
     /// which past meetings are relevant to a Recall question without re-reading every note.
     func embedContent(text: String, apiKey: String) async throws -> [Double] {
@@ -732,15 +779,17 @@ actor GeminiTranscriptionService {
             "content": ["parts": [["text": text]]]
         ])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response, data: data)
+        return try await GeminiRetry.run {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try await self.validate(response, data: data)
 
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let embedding = root["embedding"] as? [String: Any],
-              let values = embedding["values"] as? [Double] else {
-            throw GeminiTranscriptionError.invalidResponse("No embedding was returned.")
+            guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let embedding = root["embedding"] as? [String: Any],
+                  let values = embedding["values"] as? [Double] else {
+                throw GeminiTranscriptionError.invalidResponse("No embedding was returned.")
+            }
+            return values
         }
-        return values
     }
 
     static func requestBody(parts: [[String: Any]], systemInstruction: String?) -> [String: Any] {
@@ -820,9 +869,9 @@ actor GeminiTranscriptionService {
         )
     }
 
-    private func apiURL(path: String, apiKey: String) -> URL {
+    private func apiURL(path: String, apiKey: String, extraQueryItems: [URLQueryItem] = []) -> URL {
         var components = URLComponents(string: "https://generativelanguage.googleapis.com/\(path)")!
-        components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        components.queryItems = [URLQueryItem(name: "key", value: apiKey)] + extraQueryItems
         return components.url!
     }
 
