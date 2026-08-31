@@ -8,6 +8,7 @@ struct LibraryView: View {
     @State private var selectedMeetingID: String?
     @State private var isShowingGlossary = false
     @State private var isShowingNoteDetailSettings = false
+    @State private var isShowingRecall = false
     @State private var renameTarget: MeetingRecord?
     @State private var deleteTarget: MeetingRecord?
     @State private var operationError: String?
@@ -38,6 +39,7 @@ struct LibraryView: View {
                 header
                 glossaryRow
                 noteDetailSettingsRow
+                recallRow
                 statusStrip
                 Divider().overlay(AnLuongTheme.secondary(for: colorScheme).opacity(0.28))
                 content
@@ -49,6 +51,15 @@ struct LibraryView: View {
                 GlossaryView(engine: engine)
             } else if isShowingNoteDetailSettings {
                 NoteDetailSettingsView()
+            } else if isShowingRecall {
+                RecallView(
+                    engine: engine,
+                    meetings: library.records,
+                    onSelectMeeting: { id in
+                        isShowingRecall = false
+                        selectedMeetingID = id
+                    }
+                )
             } else if let selectedMeeting {
                 MeetingDetailView(
                     meeting: selectedMeeting,
@@ -166,6 +177,7 @@ struct LibraryView: View {
             selectedMeetingID = nil
             isShowingGlossary = true
             isShowingNoteDetailSettings = false
+            isShowingRecall = false
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "text.book.closed")
@@ -203,6 +215,7 @@ struct LibraryView: View {
             selectedMeetingID = nil
             isShowingGlossary = false
             isShowingNoteDetailSettings = true
+            isShowingRecall = false
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "slider.horizontal.3")
@@ -225,6 +238,36 @@ struct LibraryView: View {
         .padding(.horizontal, 22)
         .padding(.bottom, 12)
         .accessibilityHint("Configure how much detail future meeting notes include")
+    }
+
+    private var recallRow: some View {
+        Button {
+            selectedMeetingID = nil
+            isShowingGlossary = false
+            isShowingNoteDetailSettings = false
+            isShowingRecall = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle.magnifyingglass")
+                Text("Recall")
+                    .font(AnLuongTypography.body(13).weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(AnLuongTheme.secondary(for: colorScheme).opacity(0.6))
+            }
+            .foregroundStyle(isShowingRecall ? AnLuongPalette.clay : AnLuongTheme.primary(for: colorScheme))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                isShowingRecall ? AnLuongTheme.rowSurface(for: colorScheme, isHovering: true) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 22)
+        .padding(.bottom, 12)
+        .accessibilityHint("Ask a question across every meeting you've recorded")
     }
 
     private var statusStrip: some View {
@@ -316,6 +359,7 @@ struct LibraryView: View {
                             onSelect: {
                             isShowingGlossary = false
                             isShowingNoteDetailSettings = false
+                            isShowingRecall = false
                             selectedMeetingID = meeting.id
                         },
                             onRename: { renameTarget = meeting },
