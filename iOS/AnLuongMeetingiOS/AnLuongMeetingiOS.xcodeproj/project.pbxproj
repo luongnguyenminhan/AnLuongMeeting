@@ -9,6 +9,11 @@
 /* Begin PBXBuildFile section */
 		13AE96FB0D5D25E073736E17 /* NoteAIEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A0EE8FEAC024F068C1CF61 /* NoteAIEditView.swift */; };
 		6B041ECEDFDF3ACB9F0EBFC7 /* NoteEditAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FC4870516B492E2CD046CD0 /* NoteEditAgent.swift */; };
+		47D06E3C8077446BA3547E59 /* AnswerTagStreamBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6804B9DAA4C44938C441AA1 /* AnswerTagStreamBuffer.swift */; };
+		0C566BBC8BD64A49BD5A6C17 /* NoteEmbeddingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8479B7AF7FD74A95A81BD57B /* NoteEmbeddingStore.swift */; };
+		158A244C578A4CE99A627DEF /* RecallAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB32A3E0D9F64C67A90E4D97 /* RecallAgent.swift */; };
+		0F634B8CB3F64E12A164539C /* RecallConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E63CA223E3943CAA11A6F9E /* RecallConversationStore.swift */; };
+		BC8EBDB5F9C848B9B165FD31 /* RecallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A14600F7DD944E8917B8775 /* RecallView.swift */; };
 		A10000010000000000000001 /* libAnLuongMeetingCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000010000000000000001 /* libAnLuongMeetingCore.a */; };
 		A10000010000000000000002 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000010000000000000002 /* AVFoundation.framework */; };
 		A10000010000000000000003 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000010000000000000003 /* Security.framework */; };
@@ -97,6 +102,11 @@
 		A30000010000000000000030 /* IOSCoreBehaviorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCoreBehaviorTests.swift; sourceTree = "<group>"; };
 		A30000010000000000000031 /* GlossaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlossaryView.swift; sourceTree = "<group>"; };
 		D2A0EE8FEAC024F068C1CF61 /* NoteAIEditView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteAIEditView.swift; sourceTree = "<group>"; };
+		B6804B9DAA4C44938C441AA1 /* AnswerTagStreamBuffer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnswerTagStreamBuffer.swift; sourceTree = "<group>"; };
+		8479B7AF7FD74A95A81BD57B /* NoteEmbeddingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteEmbeddingStore.swift; sourceTree = "<group>"; };
+		CB32A3E0D9F64C67A90E4D97 /* RecallAgent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecallAgent.swift; sourceTree = "<group>"; };
+		5E63CA223E3943CAA11A6F9E /* RecallConversationStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecallConversationStore.swift; sourceTree = "<group>"; };
+		7A14600F7DD944E8917B8775 /* RecallView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecallView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -154,6 +164,10 @@
 				A30000010000000000000019 /* NoteDetailPreferences.swift */,
 				A3000001000000000000001A /* NoteResearchTree.swift */,
 				0FC4870516B492E2CD046CD0 /* NoteEditAgent.swift */,
+				B6804B9DAA4C44938C441AA1 /* AnswerTagStreamBuffer.swift */,
+				8479B7AF7FD74A95A81BD57B /* NoteEmbeddingStore.swift */,
+				CB32A3E0D9F64C67A90E4D97 /* RecallAgent.swift */,
+				5E63CA223E3943CAA11A6F9E /* RecallConversationStore.swift */,
 			);
 			path = ../../Packages/AnLuongMeetingCore/Sources/AnLuongMeetingCore;
 			sourceTree = "<group>";
@@ -179,6 +193,7 @@
 				A3000001000000000000002E /* Assets.xcassets */,
 				A3000001000000000000002D /* Info.plist */,
 				D2A0EE8FEAC024F068C1CF61 /* NoteAIEditView.swift */,
+				7A14600F7DD944E8917B8775 /* RecallView.swift */,
 			);
 			path = AnLuongMeetingiOS;
 			sourceTree = "<group>";
@@ -339,6 +354,10 @@
 				A10000010000000000000019 /* NoteDetailPreferences.swift in Sources */,
 				A1000001000000000000001A /* NoteResearchTree.swift in Sources */,
 				6B041ECEDFDF3ACB9F0EBFC7 /* NoteEditAgent.swift in Sources */,
+				47D06E3C8077446BA3547E59 /* AnswerTagStreamBuffer.swift in Sources */,
+				0C566BBC8BD64A49BD5A6C17 /* NoteEmbeddingStore.swift in Sources */,
+				158A244C578A4CE99A627DEF /* RecallAgent.swift in Sources */,
+				0F634B8CB3F64E12A164539C /* RecallConversationStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -362,6 +381,7 @@
 				A10000010000000000000031 /* GlossaryView.swift in Sources */,
 				A1000001000000000000002D /* IOSNotificationCoordinator.swift in Sources */,
 				13AE96FB0D5D25E073736E17 /* NoteAIEditView.swift in Sources */,
+				BC8EBDB5F9C848B9B165FD31 /* RecallView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

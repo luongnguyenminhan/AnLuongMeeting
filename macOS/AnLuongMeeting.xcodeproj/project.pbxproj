@@ -8,6 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		642E72DC16EA8DF8BBC6E186 /* NoteEditAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ABD9B910506FC601C475216 /* NoteEditAgent.swift */; };
+		1E002BBD1E124944AA5294CD /* AnswerTagStreamBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6377A01843346F3B881BFCC /* AnswerTagStreamBuffer.swift */; };
+		28AB198FABA6499F8C11460A /* GeminiRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511EEB32F6124EDCA8455795 /* GeminiRetry.swift */; };
+		386F1BC918B9418AB35AE15E /* NoteEmbeddingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B39CB3A21249F5AE066FB0 /* NoteEmbeddingStore.swift */; };
+		D1DE60ABC8FA4D2283E8DEFB /* RecallAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F3BA212B9344E691B5A6C8 /* RecallAgent.swift */; };
+		F55A7359F3CE493FA70E7850 /* RecallConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C518D90CC60344849C714714 /* RecallConversationStore.swift */; };
+		23EE6E53169842A0AFF4A4C5 /* RecallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ADF9EBB40184E11BE34B5BD /* RecallView.swift */; };
 		666351BAFA474AEAF38B13C7 /* LLMTraceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3066C88010FC78F14737EC9 /* LLMTraceStore.swift */; };
 		76672B94198DF8067DF3AEAB /* TermHighlighting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32289E7CE56C7E6FEA707749 /* TermHighlighting.swift */; };
 		A6B6243242CE1B7C3383F742 /* NoteDetailPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28D2A367EF722885B5F50AAA /* NoteDetailPreferences.swift */; };
@@ -51,6 +57,12 @@
 		28D2A367EF722885B5F50AAA /* NoteDetailPreferences.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteDetailPreferences.swift; sourceTree = "<group>"; };
 		32289E7CE56C7E6FEA707749 /* TermHighlighting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermHighlighting.swift; sourceTree = "<group>"; };
 		7ABD9B910506FC601C475216 /* NoteEditAgent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteEditAgent.swift; sourceTree = "<group>"; };
+		A6377A01843346F3B881BFCC /* AnswerTagStreamBuffer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnswerTagStreamBuffer.swift; sourceTree = "<group>"; };
+		511EEB32F6124EDCA8455795 /* GeminiRetry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiRetry.swift; sourceTree = "<group>"; };
+		14B39CB3A21249F5AE066FB0 /* NoteEmbeddingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteEmbeddingStore.swift; sourceTree = "<group>"; };
+		A1F3BA212B9344E691B5A6C8 /* RecallAgent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecallAgent.swift; sourceTree = "<group>"; };
+		C518D90CC60344849C714714 /* RecallConversationStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecallConversationStore.swift; sourceTree = "<group>"; };
+		3ADF9EBB40184E11BE34B5BD /* RecallView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecallView.swift; sourceTree = "<group>"; };
 		E3066C88010FC78F14737EC9 /* LLMTraceStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LLMTraceStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000001 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		F00000000000000000000002 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -150,6 +162,12 @@
 				32289E7CE56C7E6FEA707749 /* TermHighlighting.swift */,
 				F56169CE078C00B3F4CCB1EF /* NoteAIEditView.swift */,
 				7ABD9B910506FC601C475216 /* NoteEditAgent.swift */,
+				A6377A01843346F3B881BFCC /* AnswerTagStreamBuffer.swift */,
+				511EEB32F6124EDCA8455795 /* GeminiRetry.swift */,
+				14B39CB3A21249F5AE066FB0 /* NoteEmbeddingStore.swift */,
+				A1F3BA212B9344E691B5A6C8 /* RecallAgent.swift */,
+				C518D90CC60344849C714714 /* RecallConversationStore.swift */,
+				3ADF9EBB40184E11BE34B5BD /* RecallView.swift */,
 			);
 			path = ../Sources/AnLuongMeeting;
 			sourceTree = "<group>";
@@ -282,6 +300,12 @@
 				76672B94198DF8067DF3AEAB /* TermHighlighting.swift in Sources */,
 				D4F04F3B6133B5B620D3ECF2 /* NoteAIEditView.swift in Sources */,
 				642E72DC16EA8DF8BBC6E186 /* NoteEditAgent.swift in Sources */,
+				1E002BBD1E124944AA5294CD /* AnswerTagStreamBuffer.swift in Sources */,
+				28AB198FABA6499F8C11460A /* GeminiRetry.swift in Sources */,
+				386F1BC918B9418AB35AE15E /* NoteEmbeddingStore.swift in Sources */,
+				D1DE60ABC8FA4D2283E8DEFB /* RecallAgent.swift in Sources */,
+				F55A7359F3CE493FA70E7850 /* RecallConversationStore.swift in Sources */,
+				23EE6E53169842A0AFF4A4C5 /* RecallView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

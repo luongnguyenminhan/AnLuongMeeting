@@ -32,6 +32,8 @@ final class IOSPendingWorkCoordinator: ObservableObject {
     private let keyStore: any APIKeyStore
     private let notifications: any IOSNotificationSink
     private let service: any MeetingTranscriptionService
+    @Published private(set) var isReindexingRecall = false
+    @Published private(set) var reindexProgress: (current: Int, total: Int) = (0, 0)
     let memoryStore: MemoryStore
     @Published private(set) var pendingMemoryCount = 0
     @Published private(set) var isBackfillingMemory = false
@@ -88,6 +90,62 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         }
         let agent = NoteEditAgent(service: GeminiTranscriptionService(), memoryStore: memoryStore, transcriptURL: transcriptURL)
         return try await agent.run(instruction: instruction, noteText: noteText, apiKey: key, onStatus: onStatus, onPatch: onPatch)
+    }
+
+    /// Answers a question across every meeting in `meetings`, for the Recall screen. `onDelta`
+    /// fires with each new fragment of the answer as it streams in.
+    func answerRecallQuestion(
+        question: String,
+        history: [RecallTurn],
+        meetings: [MeetingRecord],
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> RecallAnswer {
+        guard let key = keyStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+            throw GeminiTranscriptionError.missingAPIKey
+        }
+        let agent = RecallAgent(service: GeminiTranscriptionService())
+        return try await agent.answer(question: question, history: history, meetings: meetings, apiKey: key) { delta in
+            Task { @MainActor in onDelta(delta) }
+        }
+    }
+
+    /// Explicitly (re)computes embeddings for every existing meeting note, for the Recall
+    /// screen's "Index all meetings" action. Skips a note whose embedding is already up to date,
+    /// so this is safe to run repeatedly without wasting API calls.
+    func reindexAllNotesForRecall() {
+        guard !isReindexingRecall else { return }
+        guard let key = keyStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+        guard let records = try? storage.scan(processingURL: nil) else { return }
+        let eligible = records.filter { $0.hasMeetingNote }
+        guard !eligible.isEmpty else { return }
+
+        isReindexingRecall = true
+        reindexProgress = (0, eligible.count)
+        let service = GeminiTranscriptionService()
+
+        Task {
+            for (index, record) in eligible.enumerated() {
+                if let noteURL = record.meetingNoteURL {
+                    _ = await refreshNoteEmbedding(meetingNoteURL: noteURL, service: service, apiKey: key)
+                }
+                await MainActor.run { self.reindexProgress = (index + 1, eligible.count) }
+            }
+            await MainActor.run { self.isReindexingRecall = false }
+        }
+    }
+
+    /// How many existing meeting notes already have an up-to-date Recall embedding, for the
+    /// Recall screen's persistent status line.
+    func recallIndexStatus() -> (indexed: Int, total: Int) {
+        guard let records = try? storage.scan(processingURL: nil) else { return (0, 0) }
+        let eligible = records.filter { $0.hasMeetingNote }
+        let indexed = eligible.filter { record in
+            guard let noteURL = record.meetingNoteURL,
+                  let note = try? String(contentsOf: noteURL, encoding: .utf8),
+                  let embedding = NoteEmbeddingStore(directory: noteURL.deletingLastPathComponent()).load() else { return false }
+            return embedding.noteTextHash == noteTextHash(note) && embedding.model == NoteEmbedding.currentModel
+        }.count
+        return (indexed, eligible.count)
     }
 
     func regenerate(record: MeetingRecord, mode: GeminiRegenerationMode) {
@@ -211,6 +269,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                     progress: progressHandler(for: mode)
                 )
                 await refreshMemory(transcriptURL: transcriptURL, meetingNoteURL: noteURL, apiKey: apiKey)
+                refreshEmbedding(meetingNoteURL: noteURL, apiKey: apiKey)
             case .both:
                 processingState = .processing(mode: mode, current: 0, total: 0)
                 progressMessage = "Preparing the recording…"
@@ -222,6 +281,7 @@ final class IOSPendingWorkCoordinator: ObservableObject {
                     progress: progressHandler(for: mode)
                 )
                 await refreshMemory(transcriptURL: result.transcriptURL, meetingNoteURL: result.meetingNoteURL, apiKey: apiKey)
+                refreshEmbedding(meetingNoteURL: result.meetingNoteURL, apiKey: apiKey)
             }
             guard !Task.isCancelled else { return }
             processingState = .completed(record.recordingURL)
@@ -256,6 +316,13 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         try? memoryStore.save(memory)
         Self.saveCorrections(draft.corrections, noteText: note, forNoteAt: meetingNoteURL)
         pendingMemoryCount = memory.pendingCount
+    }
+
+    private func refreshEmbedding(meetingNoteURL: URL, apiKey: String) {
+        let service = GeminiTranscriptionService()
+        Task {
+            await refreshNoteEmbedding(meetingNoteURL: meetingNoteURL, service: service, apiKey: apiKey)
+        }
     }
 
     private static func mergePendingIdentityMerges(_ merges: [IdentityMergeSuggestion], into memory: inout MemoryData) {

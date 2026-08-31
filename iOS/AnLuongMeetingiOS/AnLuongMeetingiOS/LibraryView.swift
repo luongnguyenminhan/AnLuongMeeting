@@ -58,6 +58,11 @@ struct LibraryView: View {
                 ZStack {
                     List {
                         NavigationLink {
+                            RecallView(pending: pending)
+                        } label: {
+                            RecallRow()
+                        }
+                        NavigationLink {
                             GlossaryView(pending: pending)
                         } label: {
                             GlossaryRow(pendingCount: pendingMemoryCount)
@@ -127,6 +132,20 @@ struct LibraryView: View {
             }
         } label: { Image(systemName: "line.3.horizontal.decrease.circle") }
             .accessibilityLabel("Filter meetings")
+    }
+}
+
+private struct RecallRow: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkle.magnifyingglass")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+            Text("Recall")
+                .font(.headline)
+            Spacer()
+        }
+        .padding(.vertical, 6)
     }
 }
 
