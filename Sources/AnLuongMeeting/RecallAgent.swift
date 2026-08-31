@@ -53,7 +53,11 @@ struct RecallAgent: Sendable {
         \(contextSections.joined(separator: "\n\n"))
         """
 
-        let text = try await service.generateText(parts: [["text": prompt]], apiKey: apiKey)
+        let text = try await service.generateText(
+            parts: [["text": prompt]],
+            model: GeminiTranscriptionService.recallModel,
+            apiKey: apiKey
+        )
         return RecallAnswer(text: text, citedMeetingIDs: ranked.map(\.id))
     }
 
