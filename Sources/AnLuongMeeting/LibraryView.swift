@@ -37,9 +37,9 @@ struct LibraryView: View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 header
+                recallRow
                 glossaryRow
                 noteDetailSettingsRow
-                recallRow
                 statusStrip
                 Divider().overlay(AnLuongTheme.secondary(for: colorScheme).opacity(0.28))
                 content
@@ -248,9 +248,19 @@ struct LibraryView: View {
             isShowingRecall = true
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: "sparkle.magnifyingglass")
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(AnLuongPalette.clay)
+                    .frame(width: 20)
                 Text("Recall")
                     .font(AnLuongTypography.body(13).weight(.semibold))
+                Text("AI")
+                    .font(AnLuongTypography.mono(9).weight(.bold))
+                    .tracking(0.6)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(AnLuongPalette.clay.opacity(0.18), in: Capsule())
+                    .foregroundStyle(AnLuongPalette.clay)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption2)
@@ -260,12 +270,17 @@ struct LibraryView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
-                isShowingRecall ? AnLuongTheme.rowSurface(for: colorScheme, isHovering: true) : Color.clear,
+                isShowingRecall ? AnLuongTheme.rowSurface(for: colorScheme, isHovering: true) : AnLuongPalette.clay.opacity(0.08),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(AnLuongPalette.clay.opacity(isShowingRecall ? 0 : 0.25), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 22)
+        .padding(.top, 4)
         .padding(.bottom, 12)
         .accessibilityHint("Ask a question across every meeting you've recorded")
     }
