@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		642E72DC16EA8DF8BBC6E186 /* NoteEditAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ABD9B910506FC601C475216 /* NoteEditAgent.swift */; };
+		666351BAFA474AEAF38B13C7 /* LLMTraceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3066C88010FC78F14737EC9 /* LLMTraceStore.swift */; };
+		76672B94198DF8067DF3AEAB /* TermHighlighting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32289E7CE56C7E6FEA707749 /* TermHighlighting.swift */; };
+		A6B6243242CE1B7C3383F742 /* NoteDetailPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28D2A367EF722885B5F50AAA /* NoteDetailPreferences.swift */; };
 		B00000000000000000000001 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F00000000000000000000001 /* AppKit.framework */; };
 		B00000000000000000000002 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* SwiftUI.framework */; };
 		B00000000000000000000003 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* AVFoundation.framework */; };
@@ -38,9 +42,16 @@
 		B00000000000000000000032 /* MemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000032 /* MemoryStore.swift */; };
 		B00000000000000000000033 /* GlossaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000033 /* GlossaryView.swift */; };
 		B00000000000000000000034 /* NoteCorrectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000034 /* NoteCorrectionStore.swift */; };
+		D4F04F3B6133B5B620D3ECF2 /* NoteAIEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F56169CE078C00B3F4CCB1EF /* NoteAIEditView.swift */; };
+		E0C332B72160653380AE6542 /* NoteDetailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F04526BD45054AFDDAFB19CE /* NoteDetailSettingsView.swift */; };
+		E74D2F597B6B5B902B95722B /* NoteResearchTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = F99CC4A0CA77774C3F10DDAC /* NoteResearchTree.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		28D2A367EF722885B5F50AAA /* NoteDetailPreferences.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteDetailPreferences.swift; sourceTree = "<group>"; };
+		32289E7CE56C7E6FEA707749 /* TermHighlighting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermHighlighting.swift; sourceTree = "<group>"; };
+		7ABD9B910506FC601C475216 /* NoteEditAgent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteEditAgent.swift; sourceTree = "<group>"; };
+		E3066C88010FC78F14737EC9 /* LLMTraceStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LLMTraceStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000001 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		F00000000000000000000002 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		F00000000000000000000003 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
@@ -73,46 +84,280 @@
 		F00000000000000000000032 /* MemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000033 /* GlossaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlossaryView.swift; sourceTree = "<group>"; };
 		F00000000000000000000034 /* NoteCorrectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteCorrectionStore.swift; sourceTree = "<group>"; };
+		F04526BD45054AFDDAFB19CE /* NoteDetailSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteDetailSettingsView.swift; sourceTree = "<group>"; };
+		F56169CE078C00B3F4CCB1EF /* NoteAIEditView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteAIEditView.swift; sourceTree = "<group>"; };
+		F99CC4A0CA77774C3F10DDAC /* NoteResearchTree.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteResearchTree.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		P00000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B00000000000000000000004, B00000000000000000000005, B00000000000000000000006, B00000000000000000000007, B00000000000000000000008, B00000000000000000000009,); runOnlyForDeploymentPostprocessing = 0; };
+		P00000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000001 /* AppKit.framework in Frameworks */,
+				B00000000000000000000002 /* SwiftUI.framework in Frameworks */,
+				B00000000000000000000003 /* AVFoundation.framework in Frameworks */,
+				B00000000000000000000004 /* CoreAudio.framework in Frameworks */,
+				B00000000000000000000005 /* AudioToolbox.framework in Frameworks */,
+				B00000000000000000000006 /* CoreMedia.framework in Frameworks */,
+				B00000000000000000000007 /* ScreenCaptureKit.framework in Frameworks */,
+				B00000000000000000000008 /* Carbon.framework in Frameworks */,
+				B00000000000000000000009 /* Security.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		G00000000000000000000001 = {isa = PBXGroup; children = (G00000000000000000000002, G00000000000000000000003, G00000000000000000000004, G00000000000000000000005,); sourceTree = "<group>"; };
-		G00000000000000000000002 /* Sources */ = {isa = PBXGroup; children = (F00000000000000000000020, F00000000000000000000021, F00000000000000000000022, F00000000000000000000023, F00000000000000000000024, F00000000000000000000025, F00000000000000000000026, F00000000000000000000027, F00000000000000000000028, F00000000000000000000029, F0000000000000000000002A, F0000000000000000000002B, F0000000000000000000002C, F0000000000000000000002D, F0000000000000000000002E, F0000000000000000000002F, F00000000000000000000030, F00000000000000000000031, F00000000000000000000032, F00000000000000000000033, F00000000000000000000034,); path = ../Sources/AnLuongMeeting; sourceTree = "<group>"; };
-		G00000000000000000000003 /* Resources */ = {isa = PBXGroup; children = (F00000000000000000000010,); path = ../Resources; sourceTree = "<group>"; };
-		G00000000000000000000004 /* Products */ = {isa = PBXGroup; children = (F00000000000000000000011,); name = Products; sourceTree = "<group>"; };
-		G00000000000000000000005 /* Frameworks */ = {isa = PBXGroup; children = (F00000000000000000000001, F00000000000000000000002, F00000000000000000000003, F00000000000000000000004, F00000000000000000000005, F00000000000000000000006, F00000000000000000000007, F00000000000000000000008, F00000000000000000000009,); name = Frameworks; sourceTree = "<group>"; };
+		G00000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				G00000000000000000000002 /* AnLuongMeeting */,
+				G00000000000000000000003 /* Resources */,
+				G00000000000000000000004 /* Products */,
+				G00000000000000000000005 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		G00000000000000000000002 /* AnLuongMeeting */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000020 /* AnLuongMeetingApp.swift */,
+				F00000000000000000000021 /* AnLuongVisualStyle.swift */,
+				F00000000000000000000022 /* AudioLevel.swift */,
+				F00000000000000000000023 /* GeminiAPIKeyStore.swift */,
+				F00000000000000000000024 /* GeminiTranscriptionService.swift */,
+				F00000000000000000000025 /* HotKeyManager.swift */,
+				F00000000000000000000026 /* LibraryView.swift */,
+				F00000000000000000000027 /* Log.swift */,
+				F00000000000000000000028 /* MeetingDetailView.swift */,
+				F00000000000000000000029 /* MeetingLibraryModel.swift */,
+				F0000000000000000000002A /* MenuBarView.swift */,
+				F0000000000000000000002B /* MicrophoneCapture.swift */,
+				F0000000000000000000002C /* RecordingEngine.swift */,
+				F0000000000000000000002D /* RecordingLibrary.swift */,
+				F0000000000000000000002E /* ScreenRecordingPermission.swift */,
+				F0000000000000000000002F /* StereoWriter.swift */,
+				F00000000000000000000030 /* SystemAudioCapture.swift */,
+				F00000000000000000000031 /* VoiceProcessingMicCapture.swift */,
+				F00000000000000000000032 /* MemoryStore.swift */,
+				F00000000000000000000033 /* GlossaryView.swift */,
+				F00000000000000000000034 /* NoteCorrectionStore.swift */,
+				E3066C88010FC78F14737EC9 /* LLMTraceStore.swift */,
+				28D2A367EF722885B5F50AAA /* NoteDetailPreferences.swift */,
+				F04526BD45054AFDDAFB19CE /* NoteDetailSettingsView.swift */,
+				F99CC4A0CA77774C3F10DDAC /* NoteResearchTree.swift */,
+				32289E7CE56C7E6FEA707749 /* TermHighlighting.swift */,
+				F56169CE078C00B3F4CCB1EF /* NoteAIEditView.swift */,
+				7ABD9B910506FC601C475216 /* NoteEditAgent.swift */,
+			);
+			path = ../Sources/AnLuongMeeting;
+			sourceTree = "<group>";
+		};
+		G00000000000000000000003 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000010 /* AppIcon.icns */,
+			);
+			path = ../Resources;
+			sourceTree = "<group>";
+		};
+		G00000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000011 /* AnLuongMeeting.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		G00000000000000000000005 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000001 /* AppKit.framework */,
+				F00000000000000000000002 /* SwiftUI.framework */,
+				F00000000000000000000003 /* AVFoundation.framework */,
+				F00000000000000000000004 /* CoreAudio.framework */,
+				F00000000000000000000005 /* AudioToolbox.framework */,
+				F00000000000000000000006 /* CoreMedia.framework */,
+				F00000000000000000000007 /* ScreenCaptureKit.framework */,
+				F00000000000000000000008 /* Carbon.framework */,
+				F00000000000000000000009 /* Security.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		T00000000000000000000001 /* AnLuongMeeting */ = {isa = PBXNativeTarget; buildConfigurationList = L00000000000000000000001; buildPhases = (S00000000000000000000001, P00000000000000000000001, R00000000000000000000001,); buildRules = (); dependencies = (); name = AnLuongMeeting; productName = AnLuongMeeting; productReference = F00000000000000000000011; productType = "com.apple.product-type.application"; };
+		T00000000000000000000001 /* AnLuongMeeting */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = L00000000000000000000001 /* Build configuration list for PBXNativeTarget "AnLuongMeeting" */;
+			buildPhases = (
+				S00000000000000000000001 /* Sources */,
+				P00000000000000000000001 /* Frameworks */,
+				R00000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AnLuongMeeting;
+			productName = AnLuongMeeting;
+			productReference = F00000000000000000000011 /* AnLuongMeeting.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		PR00000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = { LastUpgradeCheck = 1600; ORGANIZATIONNAME = AnLuongMeeting; TargetAttributes = { T00000000000000000000001 = { CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = L00000000000000000000010; compatibilityVersion = "Xcode 15.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = G00000000000000000000001; productRefGroup = G00000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (T00000000000000000000001,); };
+		PR00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1600;
+				ORGANIZATIONNAME = AnLuongMeeting;
+				TargetAttributes = {
+					T00000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = L00000000000000000000010 /* Build configuration list for PBXProject "AnLuongMeeting" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = G00000000000000000000001;
+			productRefGroup = G00000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				T00000000000000000000001 /* AnLuongMeeting */,
+			);
+		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		R00000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000010,); runOnlyForDeploymentPostprocessing = 0; };
+		R00000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000010 /* AppIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		S00000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000020, B00000000000000000000021, B00000000000000000000022, B00000000000000000000023, B00000000000000000000024, B00000000000000000000025, B00000000000000000000026, B00000000000000000000027, B00000000000000000000028, B00000000000000000000029, B0000000000000000000002A, B0000000000000000000002B, B0000000000000000000002C, B0000000000000000000002D, B0000000000000000000002E, B0000000000000000000002F, B00000000000000000000030, B00000000000000000000031, B00000000000000000000032, B00000000000000000000033, B00000000000000000000034,); runOnlyForDeploymentPostprocessing = 0; };
+		S00000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000020 /* AnLuongMeetingApp.swift in Sources */,
+				B00000000000000000000021 /* AnLuongVisualStyle.swift in Sources */,
+				B00000000000000000000022 /* AudioLevel.swift in Sources */,
+				B00000000000000000000023 /* GeminiAPIKeyStore.swift in Sources */,
+				B00000000000000000000024 /* GeminiTranscriptionService.swift in Sources */,
+				B00000000000000000000025 /* HotKeyManager.swift in Sources */,
+				B00000000000000000000026 /* LibraryView.swift in Sources */,
+				B00000000000000000000027 /* Log.swift in Sources */,
+				B00000000000000000000028 /* MeetingDetailView.swift in Sources */,
+				B00000000000000000000029 /* MeetingLibraryModel.swift in Sources */,
+				B0000000000000000000002A /* MenuBarView.swift in Sources */,
+				B0000000000000000000002B /* MicrophoneCapture.swift in Sources */,
+				B0000000000000000000002C /* RecordingEngine.swift in Sources */,
+				B0000000000000000000002D /* RecordingLibrary.swift in Sources */,
+				B0000000000000000000002E /* ScreenRecordingPermission.swift in Sources */,
+				B0000000000000000000002F /* StereoWriter.swift in Sources */,
+				B00000000000000000000030 /* SystemAudioCapture.swift in Sources */,
+				B00000000000000000000031 /* VoiceProcessingMicCapture.swift in Sources */,
+				B00000000000000000000032 /* MemoryStore.swift in Sources */,
+				B00000000000000000000033 /* GlossaryView.swift in Sources */,
+				B00000000000000000000034 /* NoteCorrectionStore.swift in Sources */,
+				666351BAFA474AEAF38B13C7 /* LLMTraceStore.swift in Sources */,
+				A6B6243242CE1B7C3383F742 /* NoteDetailPreferences.swift in Sources */,
+				E0C332B72160653380AE6542 /* NoteDetailSettingsView.swift in Sources */,
+				E74D2F597B6B5B902B95722B /* NoteResearchTree.swift in Sources */,
+				76672B94198DF8067DF3AEAB /* TermHighlighting.swift in Sources */,
+				D4F04F3B6133B5B620D3ECF2 /* NoteAIEditView.swift in Sources */,
+				642E72DC16EA8DF8BBC6E186 /* NoteEditAgent.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		C00000000000000000000001 /* AnLuongMeeting Debug */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CODE_SIGNING_ALLOWED = NO; INFOPLIST_FILE = ../Resources/Info.plist; MACOSX_DEPLOYMENT_TARGET = 14.2; PRODUCT_BUNDLE_IDENTIFIER = com.anluong.meeting; PRODUCT_NAME = AnLuongMeeting; SDKROOT = macosx; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_VERSION = 5.9; }; name = Debug; };
-		C00000000000000000000002 /* AnLuongMeeting Release */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CODE_SIGNING_ALLOWED = NO; INFOPLIST_FILE = ../Resources/Info.plist; MACOSX_DEPLOYMENT_TARGET = 14.2; PRODUCT_BUNDLE_IDENTIFIER = com.anluong.meeting; PRODUCT_NAME = AnLuongMeeting; SDKROOT = macosx; SWIFT_VERSION = 5.9; }; name = Release; };
-		C00000000000000000000010 /* Project Debug */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.9; }; name = Debug; };
-		C00000000000000000000020 /* Project Release */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.9; }; name = Release; };
+		C00000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				INFOPLIST_FILE = ../Resources/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anluong.meeting;
+				PRODUCT_NAME = AnLuongMeeting;
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		C00000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				INFOPLIST_FILE = ../Resources/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anluong.meeting;
+				PRODUCT_NAME = AnLuongMeeting;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		C00000000000000000000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		C00000000000000000000020 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		L00000000000000000000001 /* Build configuration list for PBXNativeTarget */ = {isa = XCConfigurationList; buildConfigurations = (C00000000000000000000001, C00000000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		L00000000000000000000010 /* Build configuration list for PBXProject */ = {isa = XCConfigurationList; buildConfigurations = (C00000000000000000000010, C00000000000000000000020,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		L00000000000000000000001 /* Build configuration list for PBXNativeTarget "AnLuongMeeting" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000000000000000000001 /* Debug */,
+				C00000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		L00000000000000000000010 /* Build configuration list for PBXProject "AnLuongMeeting" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000000000000000000010 /* Debug */,
+				C00000000000000000000020 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 	};
 	rootObject = PR00000000000000000000001 /* Project object */;

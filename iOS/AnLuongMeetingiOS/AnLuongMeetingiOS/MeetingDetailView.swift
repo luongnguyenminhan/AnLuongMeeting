@@ -1,5 +1,6 @@
 // Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5 · native iOS workbench · one-title hierarchy · no custom motion
 import SwiftUI
+import UIKit
 import AnLuongMeetingCore
 
 struct IOSMeetingDetailPresentation: Equatable {
@@ -25,6 +26,8 @@ struct IOSMeetingDetailView: View {
     @State private var corrections: [NoteCorrection] = []
     @State private var activeCorrection: NoteCorrection?
     @State private var correctionError: String?
+    @State private var isAIEditPresented = false
+    @State private var noteRefreshToken = UUID()
 
     var body: some View {
         ScrollView {
@@ -42,21 +45,27 @@ struct IOSMeetingDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button("Edit with AI", systemImage: "sparkles") {
+                        tab = .meetingNote
+                        isAIEditPresented = true
+                    }
+                    .disabled(meeting.meetingNoteURL == nil || pending.processingState.isBusy || isAIEditPresented || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
                     Section("Regenerate") {
                         Button("Transcript", systemImage: "text.quote") {
                             pending.regenerate(record: meeting, mode: .transcriptOnly)
                         }
-                        .disabled(!IOSMeetingActionAvailability.isEnabled(.regenerateTranscript, meeting: meeting, apiKey: apiKey, isBusy: pending.processingState.isBusy))
+                        .disabled(isAIEditPresented || !IOSMeetingActionAvailability.isEnabled(.regenerateTranscript, meeting: meeting, apiKey: apiKey, isBusy: pending.processingState.isBusy))
 
                         Button("Meeting note", systemImage: "note.text") {
                             pending.regenerate(record: meeting, mode: .noteOnly)
                         }
-                        .disabled(!IOSMeetingActionAvailability.isEnabled(.regenerateNote, meeting: meeting, apiKey: apiKey, isBusy: pending.processingState.isBusy))
+                        .disabled(isAIEditPresented || !IOSMeetingActionAvailability.isEnabled(.regenerateNote, meeting: meeting, apiKey: apiKey, isBusy: pending.processingState.isBusy))
 
                         Button("Transcript + note", systemImage: "arrow.clockwise") {
                             pending.regenerate(record: meeting, mode: .both)
                         }
-                        .disabled(!IOSMeetingActionAvailability.isEnabled(.regenerateBoth, meeting: meeting, apiKey: apiKey, isBusy: pending.processingState.isBusy))
+                        .disabled(isAIEditPresented || !IOSMeetingActionAvailability.isEnabled(.regenerateBoth, meeting: meeting, apiKey: apiKey, isBusy: pending.processingState.isBusy))
                     }
                     if pending.activeRecordingURL == meeting.recordingURL, pending.processingState.isBusy {
                         Button("Cancel processing", systemImage: "xmark.circle", role: .cancel) {
@@ -70,6 +79,12 @@ struct IOSMeetingDetailView: View {
                         }
                         if let noteURL = meeting.meetingNoteURL {
                             ShareLink(item: noteURL) { Label("Meeting note", systemImage: "note.text") }
+                        }
+                        if let notePlainText {
+                            ShareLink(item: notePlainText) { Label("Note as plain text", systemImage: "doc.on.clipboard") }
+                        }
+                        if let notePDFURL {
+                            ShareLink(item: notePDFURL) { Label("Note as PDF", systemImage: "doc.richtext") }
                         }
                     }
                     Button("Rename", systemImage: "pencil") { name = meeting.displayName; showRename = true }
@@ -104,6 +119,11 @@ struct IOSMeetingDetailView: View {
             Button("OK") { correctionError = nil }
         } message: {
             Text(correctionError ?? "Please try again.")
+        }
+        .sheet(isPresented: $isAIEditPresented) {
+            if let noteURL = meeting.meetingNoteURL {
+                NoteAIEditSheet(noteURL: noteURL, transcriptURL: meeting.transcriptURL, pending: pending, onApplied: { noteRefreshToken = UUID() })
+            }
         }
     }
 
@@ -202,13 +222,14 @@ struct IOSMeetingDetailView: View {
 
     @ViewBuilder
     private var artifact: some View {
-        let url = tab == .meetingNote ? meeting.meetingNoteURL : meeting.transcriptURL
-        if let url, let text = try? String(contentsOf: url, encoding: .utf8) {
+        if let url = tab == .meetingNote ? meeting.meetingNoteURL : meeting.transcriptURL,
+           let text = try? String(contentsOf: url, encoding: .utf8) {
             MarkdownDocumentView(
                 markdown: text,
                 corrections: tab == .meetingNote ? corrections : [],
                 onCorrectionTap: { activeCorrection = $0 }
             )
+                .id(noteRefreshToken)
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -233,6 +254,49 @@ struct IOSMeetingDetailView: View {
 
     private var presentation: IOSMeetingDetailPresentation {
         IOSMeetingDetailPresentation(meeting: meeting, tab: tab)
+    }
+
+    private var noteMarkdownBlocks: [MarkdownBlock]? {
+        guard let noteURL = meeting.meetingNoteURL,
+              let text = try? String(contentsOf: noteURL, encoding: .utf8) else { return nil }
+        return Markdown.parse(text)
+    }
+
+    private var notePlainText: String? {
+        noteMarkdownBlocks.map(Markdown.plainText)
+    }
+
+    /// Renders the note as a single continuously-tall PDF page (no real pagination).
+    /// ponytail: add page breaks/margins if notes are ever printed physically.
+    private var notePDFURL: URL? {
+        guard let blocks = noteMarkdownBlocks else { return nil }
+        let attributed = NSMutableAttributedString(string: meeting.displayName + "\n\n", attributes: [
+            .font: UIFont.boldSystemFont(ofSize: 22)
+        ])
+        for block in blocks { attributed.append(IOSNoteExport.attributedString(for: block)) }
+
+        let pageWidth: CGFloat = 612
+        let margin: CGFloat = 48
+        let textWidth = pageWidth - margin * 2
+        let contentHeight = attributed.boundingRect(
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin],
+            context: nil
+        ).height
+
+        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: contentHeight + margin * 2)
+        let data = UIGraphicsPDFRenderer(bounds: pageRect).pdfData { context in
+            context.beginPage()
+            attributed.draw(in: CGRect(x: margin, y: margin, width: textWidth, height: contentHeight))
+        }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(meeting.displayName).pdf")
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
     }
 
     private var metadataLine: String {
@@ -350,6 +414,37 @@ enum IOSMeetingActionAvailability {
             return !isBusy && hasAPIKey
         case .regenerateNote:
             return !isBusy && hasAPIKey && meeting.transcriptURL != nil
+        }
+    }
+}
+
+enum IOSNoteExport {
+    static func attributedString(for block: MarkdownBlock) -> NSAttributedString {
+        let bodyFont = UIFont.systemFont(ofSize: 15)
+        switch block {
+        case .heading(let level, let text):
+            let size: CGFloat = level == 1 ? 20 : level == 2 ? 17 : 15
+            return NSAttributedString(string: text + "\n\n", attributes: [
+                .font: UIFont.systemFont(ofSize: size, weight: .semibold)
+            ])
+        case .paragraph(let text):
+            return NSAttributedString(string: text + "\n\n", attributes: [.font: bodyFont])
+        case .unorderedList(let items):
+            let text = items.map { "•  \($0)" }.joined(separator: "\n") + "\n\n"
+            return NSAttributedString(string: text, attributes: [.font: bodyFont])
+        case .orderedList(let items):
+            let text = items.enumerated().map { "\($0.offset + 1).  \($0.element)" }.joined(separator: "\n") + "\n\n"
+            return NSAttributedString(string: text, attributes: [.font: bodyFont])
+        case .quote(let text):
+            return NSAttributedString(string: text + "\n\n", attributes: [
+                .font: UIFont.italicSystemFont(ofSize: bodyFont.pointSize)
+            ])
+        case .code(let text):
+            return NSAttributedString(string: text + "\n\n", attributes: [
+                .font: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            ])
+        case .divider:
+            return NSAttributedString(string: "\n")
         }
     }
 }

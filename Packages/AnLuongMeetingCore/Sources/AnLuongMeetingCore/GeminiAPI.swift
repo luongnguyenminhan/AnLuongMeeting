@@ -35,6 +35,22 @@ public struct TranscriptionResult: Sendable {
     }
 }
 
+/// A single targeted find/replace edit proposed against a meeting note's Markdown text —
+/// the same "old string -> new string" shape a coding agent's edit tool uses, so a caller can
+/// render a diff and apply only what's approved.
+public struct NoteEditPatch: Identifiable, Equatable, Sendable {
+    public let id = UUID()
+    public let oldString: String
+    public let newString: String
+    public let explanation: String
+
+    public init(oldString: String, newString: String, explanation: String) {
+        self.oldString = oldString
+        self.newString = newString
+        self.explanation = explanation
+    }
+}
+
 public protocol MeetingTranscriptionService: Sendable {
     func transcribe(
         recordingURL: URL,
@@ -522,6 +538,36 @@ public actor GeminiTranscriptionService: MeetingTranscriptionService {
             throw GeminiTranscriptionError.invalidResponse("Gemini returned no text.")
         }
         return text
+    }
+
+    /// One round trip of a multi-turn, tool-calling conversation: sends the full turn history
+    /// plus available tools, and returns the model's next turn verbatim (its role and parts,
+    /// which may include `functionCall` parts) for the caller to dispatch and continue the loop.
+    func generateWithTools(
+        contents: [[String: Any]],
+        tools: [[String: Any]],
+        systemInstruction: String,
+        apiKey: String
+    ) async throws -> (role: String, parts: [[String: Any]]) {
+        let url = baseURL.appendingPathComponent("v1beta/models/\(Self.model):generateContent").appending(queryItems: [URLQueryItem(name: "key", value: apiKey)])
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "contents": contents,
+            "tools": tools,
+            "system_instruction": ["parts": [["text": systemInstruction]]]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = root["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]] else {
+            throw GeminiTranscriptionError.invalidResponse("Gemini returned no content.")
+        }
+        return (content["role"] as? String ?? "model", parts)
     }
 
     static func requestBody(parts: [[String: Any]], systemInstruction: String?) -> [String: Any] {

@@ -74,6 +74,22 @@ final class IOSPendingWorkCoordinator: ObservableObject {
         }
     }
 
+    /// Runs one instruction through the tool-calling note-edit agent, for the AI note-edit panel
+    /// to render proposed edits as a diff before the user approves anything.
+    func runNoteEditAgent(
+        instruction: String,
+        noteText: String,
+        transcriptURL: URL?,
+        onStatus: @escaping @Sendable (String) -> Void,
+        onPatch: @escaping @Sendable (NoteEditPatch) -> Void
+    ) async throws -> String {
+        guard let key = keyStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+            throw GeminiTranscriptionError.missingAPIKey
+        }
+        let agent = NoteEditAgent(service: GeminiTranscriptionService(), memoryStore: memoryStore, transcriptURL: transcriptURL)
+        return try await agent.run(instruction: instruction, noteText: noteText, apiKey: key, onStatus: onStatus, onPatch: onPatch)
+    }
+
     func regenerate(record: MeetingRecord, mode: GeminiRegenerationMode) {
         guard !processingState.isBusy, processingTask == nil else { return }
         guard let key = keyStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
