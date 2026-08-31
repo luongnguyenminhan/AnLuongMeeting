@@ -531,7 +531,7 @@ final class RecordingEngine: ObservableObject {
             guard let noteURL = record.meetingNoteURL,
                   let note = try? String(contentsOf: noteURL, encoding: .utf8),
                   let embedding = NoteEmbeddingStore(directory: noteURL.deletingLastPathComponent()).load() else { return false }
-            return embedding.noteTextHash == noteTextHash(note)
+            return embedding.noteTextHash == noteTextHash(note) && embedding.model == NoteEmbedding.currentModel
         }.count
         return (indexed, eligible.count)
     }

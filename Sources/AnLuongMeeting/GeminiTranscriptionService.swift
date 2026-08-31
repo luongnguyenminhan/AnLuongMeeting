@@ -84,7 +84,7 @@ enum GeminiTranscriptionError: LocalizedError, Equatable {
 actor GeminiTranscriptionService {
     private static let chunkDuration: TimeInterval = 20 * 60
     private static let model = "gemini-3.1-flash-lite"
-    private static let embeddingModel = "text-embedding-004"
+    private static let embeddingModel = "gemini-embedding-001"
 
     private static let transcriptionPrompt = """
     Listen carefully to the following audio file. PROVIDE A DETAILED TRANSCRIPT WITH SPEAKER DIARIZATION, TRANSCRIBED VERBATIM IN WHATEVER LANGUAGE(S) ARE ACTUALLY SPOKEN — do not translate; transcribe each speaker's words in their original language.

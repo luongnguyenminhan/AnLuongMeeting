@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 struct NoteEmbedding: Codable, Sendable {
-    static let currentModel = "text-embedding-004"
+    static let currentModel = "gemini-embedding-001"
 
     let vector: [Double]
     let noteTextHash: String
@@ -45,7 +45,7 @@ func refreshNoteEmbedding(meetingNoteURL: URL, service: GeminiTranscriptionServi
     guard let note = try? String(contentsOf: meetingNoteURL, encoding: .utf8) else { return false }
     let store = NoteEmbeddingStore(directory: meetingNoteURL.deletingLastPathComponent())
     let hash = noteTextHash(note)
-    if let existing = store.load(), existing.noteTextHash == hash { return true }
+    if let existing = store.load(), existing.noteTextHash == hash, existing.model == NoteEmbedding.currentModel { return true }
     do {
         let vector = try await service.embedContent(text: note, apiKey: apiKey)
         try store.save(NoteEmbedding(vector: vector, noteTextHash: hash, model: NoteEmbedding.currentModel))
