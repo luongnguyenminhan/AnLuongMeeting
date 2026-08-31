@@ -110,7 +110,7 @@ public enum GeminiTranscriptionError: LocalizedError, Equatable, Sendable {
 public actor GeminiTranscriptionService: MeetingTranscriptionService {
     private static let chunkDuration: TimeInterval = 20 * 60
     private static let remoteProcessingTimeout: TimeInterval = 5 * 60
-    private static let model = "gemini-3.1-flash-lite"
+    private static let model = "gemini-3.5-flash-lite"
     private static let transcriptionPrompt = """
     Listen carefully to the following audio file. PROVIDE A DETAILED TRANSCRIPT WITH SPEAKER DIARIZATION, TRANSCRIBED VERBATIM IN WHATEVER LANGUAGE(S) ARE ACTUALLY SPOKEN — do not translate; transcribe each speaker's words in their original language.
     Focus on speaker diarization and provide a detailed transcript.

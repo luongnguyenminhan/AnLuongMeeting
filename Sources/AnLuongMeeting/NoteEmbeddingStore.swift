@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 struct NoteEmbedding: Codable, Sendable {
-    static let currentModel = "gemini-embedding-001"
+    static let currentModel = "gemini-embedding-2"
 
     let vector: [Double]
     let noteTextHash: String
